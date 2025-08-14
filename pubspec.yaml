@@ -26,8 +26,17 @@ dependencies:
   http: ^1.2.2                    # For OpenAI API calls (easily replaceable)
   dio: ^5.7.0                     # Alternative HTTP client for advanced features
   
-  # Text-to-Speech (Urdu)
-  flutter_tts: ^4.2.0             # Urdu text-to-speech
+  # Voice Functionality
+  flutter_tts: ^4.2.0             # Text-to-Speech (Urdu support)
+  speech_to_text: ^7.0.0          # Speech-to-Text for voice input
+  permission_handler: ^11.3.1     # Handle microphone permissions
+  
+  # Media & Files
+  image_picker: ^1.1.2            # For profile pictures
+  url_launcher: ^6.3.2            # Launch URLs and external apps
+  
+  # Charts & Data Visualization
+  fl_chart: ^1.0.0               # For mood tracking chart
   
   # Animations & UI Enhancement
   animated_text_kit: ^4.2.2       # Animated text for welcome screens
