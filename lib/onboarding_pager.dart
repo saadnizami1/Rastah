@@ -5,7 +5,6 @@ import 'screens/language_screen.dart';
 import 'screens/consent_screen.dart';
 import 'screens/personalization_screen.dart';
 
-
 class OnboardingPager extends StatefulWidget {
   const OnboardingPager({super.key});
 
@@ -13,43 +12,20 @@ class OnboardingPager extends StatefulWidget {
   State<OnboardingPager> createState() => _OnboardingPagerState();
 }
 
-class _OnboardingPagerState extends State<OnboardingPager> with TickerProviderStateMixin {
+class _OnboardingPagerState extends State<OnboardingPager> {
   late PageController _pageController;
   int _currentIndex = 0;
-  late AnimationController _progressAnimationController;
-  late AnimationController _fadeAnimationController;
+  bool _isTransitioning = false; // Prevent multiple rapid taps
   
-  final List<Widget> _screens = [
-    const WelcomeScreen(),
-    const LanguageScreen(),
-    const ConsentScreen(),
-    const PersonalizationScreen(),
-  ];
-
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    
-    // Animation controllers for smooth transitions
-    _progressAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    
-    _fadeAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
-    
-    _fadeAnimationController.forward();
   }
 
   @override
   void dispose() {
     _pageController.dispose();
-    _progressAnimationController.dispose();
-    _fadeAnimationController.dispose();
     super.dispose();
   }
 
@@ -60,41 +36,87 @@ class _OnboardingPagerState extends State<OnboardingPager> with TickerProviderSt
     
     // Haptic feedback for better UX
     HapticFeedback.lightImpact();
-    
-    // Animate progress
-    _progressAnimationController.forward();
-    
-    // Fade animation for smooth transitions
-    _fadeAnimationController.reset();
-    _fadeAnimationController.forward();
+  }
+
+  // Navigation methods to pass to child screens
+  void _goToNextPage() async {
+    if (_currentIndex < _getScreens().length - 1 && !_isTransitioning) {
+      setState(() {
+        _isTransitioning = true;
+      });
+      
+      await _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.fastOutSlowIn,
+      );
+      
+      // Small delay to ensure smooth completion
+      await Future.delayed(const Duration(milliseconds: 50));
+      
+      if (mounted) {
+        setState(() {
+          _isTransitioning = false;
+        });
+      }
+    }
+  }
+
+  void _goToPreviousPage() async {
+    if (_currentIndex > 0 && !_isTransitioning) {
+      setState(() {
+        _isTransitioning = true;
+      });
+      
+      await _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.fastOutSlowIn,
+      );
+      
+      // Small delay to ensure smooth completion
+      await Future.delayed(const Duration(milliseconds: 50));
+      
+      if (mounted) {
+        setState(() {
+          _isTransitioning = false;
+        });
+      }
+    }
+  }
+
+  // Get screens with navigation callbacks
+  List<Widget> _getScreens() {
+    return [
+      WelcomeScreen(onNext: _goToNextPage),
+      LanguageScreen(onNext: _goToNextPage),
+      ConsentScreen(onNext: _goToNextPage),
+      PersonalizationScreen(onNext: _goToNextPage),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
+    final screens = _getScreens();
+    
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Main content with vertical page view
+          // Main content with ultra-smooth transitions
           PageView.builder(
             controller: _pageController,
-            scrollDirection: Axis.vertical,
+            scrollDirection: Axis.horizontal,
             onPageChanged: _onPageChanged,
-            physics: const BouncingScrollPhysics(),
-            itemCount: _screens.length,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: screens.length,
+            pageSnapping: true, // Ensures clean snapping
+            allowImplicitScrolling: false, // Prevents preloading conflicts
             itemBuilder: (context, index) {
-              return AnimatedBuilder(
-                animation: _fadeAnimationController,
-                builder: (context, child) {
-                  return FadeTransition(
-                    opacity: _fadeAnimationController,
-                    child: Container(
-                      height: MediaQuery.of(context).size.height,
-                      width: MediaQuery.of(context).size.width,
-                      child: _screens[index],
-                    ),
-                  );
-                },
+              return RepaintBoundary( // Isolate repaints for better performance
+                child: Container(
+                  height: MediaQuery.of(context).size.height,
+                  width: MediaQuery.of(context).size.width,
+                  child: screens[index],
+                ),
               );
             },
           ),
@@ -111,7 +133,7 @@ class _OnboardingPagerState extends State<OnboardingPager> with TickerProviderSt
                   children: [
                     // Progress dots with elegant design
                     ...List.generate(
-                      _screens.length,
+                      screens.length,
                       (index) => AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeInOut,
@@ -145,7 +167,7 @@ class _OnboardingPagerState extends State<OnboardingPager> with TickerProviderSt
                       child: RotatedBox(
                         quarterTurns: 1,
                         child: Text(
-                          '${_currentIndex + 1}/${_screens.length}',
+                          '${_currentIndex + 1}/${screens.length}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -161,81 +183,7 @@ class _OnboardingPagerState extends State<OnboardingPager> with TickerProviderSt
             ),
           ),
           
-          // Scroll hint indicator (bottom center)
-          if (_currentIndex < _screens.length - 1)
-            Positioned(
-              bottom: 40,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                child: Center(
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 500),
-                    opacity: _currentIndex == 0 ? 1.0 : 0.6,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Scroll instruction text
-                        if (_currentIndex == 0)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Text(
-                              'Swipe up to continue',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.8),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w300,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                        
-                        // Animated scroll indicator
-                        TweenAnimationBuilder<double>(
-                          duration: const Duration(milliseconds: 1500),
-                          tween: Tween(begin: 0.0, end: 1.0),
-                          builder: (context, value, child) {
-                            return Transform.translate(
-                              offset: Offset(0, -10 * value),
-                              child: AnimatedOpacity(
-                                duration: const Duration(milliseconds: 300),
-                                opacity: 1.0 - value,
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.3),
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.keyboard_arrow_up,
-                                    color: Colors.white.withOpacity(0.8),
-                                    size: 20,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                          onEnd: () {
-                            // Restart animation
-                            Future.delayed(const Duration(milliseconds: 500), () {
-                              if (mounted) {
-                                setState(() {});
-                              }
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          
-          // Elegant screen transition overlay
+          // Back button (top left)
           if (_currentIndex > 0)
             Positioned(
               top: 20,
@@ -245,14 +193,7 @@ class _OnboardingPagerState extends State<OnboardingPager> with TickerProviderSt
                   duration: const Duration(milliseconds: 300),
                   opacity: 0.8,
                   child: GestureDetector(
-                    onTap: () {
-                      if (_currentIndex > 0) {
-                        _pageController.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      }
-                    },
+                    onTap: _goToPreviousPage,
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
@@ -329,8 +270,6 @@ class _OnboardingPagerState extends State<OnboardingPager> with TickerProviderSt
         return 'Privacy';
       case 3:
         return 'Profile';
-      case 4:
-        return 'Confirm';
       default:
         return 'Step ${index + 1}';
     }

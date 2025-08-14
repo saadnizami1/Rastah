@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AIService {
-  static const String _apiKey = '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';
+  static const String _apiKey = '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';
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
   
   // Simplified and shorter system prompts for faster processing

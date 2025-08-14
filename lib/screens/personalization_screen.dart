@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PersonalizationScreen extends StatefulWidget {
-  const PersonalizationScreen({super.key});
+  const PersonalizationScreen({super.key, required void Function() onNext});
 
   @override
   State<PersonalizationScreen> createState() => _PersonalizationScreenState();

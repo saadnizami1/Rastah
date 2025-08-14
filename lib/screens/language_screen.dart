@@ -1,265 +1,296 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:go_router/go_router.dart';
 
 class LanguageScreen extends StatelessWidget {
-  const LanguageScreen({super.key});
+  final VoidCallback? onNext;
+  
+  const LanguageScreen({super.key, this.onNext});
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
       body: Stack(
         children: [
-          // Background image (same as welcome screen)
-          Container(
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage("assets/images/welcome.png"),
-                fit: BoxFit.cover,
-              ),
+          // Background image
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/welcome.png',
+              fit: BoxFit.cover,
             ),
           ),
-
-          // Dark overlay for readability
-          Container(
-            color: Colors.black.withOpacity(0.3),
+          // Glass overlay
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.35),
+            ),
           ),
-
-          // Main scrollable content
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 20,
-                bottom: 120, // Extra space for buttons
-              ),
+              padding: const EdgeInsets.all(24.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 20),
-
-                  // Header section with glass effect
-                  _glassCard(
+                  const SizedBox(height: 40),
+                  
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: _glassDecoration(),
                     child: Column(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 48,
-                            color: Colors.white.withOpacity(0.9),
-                          ),
+                        Icon(
+                          Icons.language,
+                          size: 48,
+                          color: Colors.white,
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'آپ کیسے بات کر سکتے ہیں؟',
-                          style: GoogleFonts.amiri(
-                            fontSize: 26,
+                          'زبان کی سہولت',
+                          style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 28,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
-                            height: 1.3,
                           ),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'How to Communicate',
+                          'Language Support',
                           style: GoogleFonts.poppins(
                             fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white70,
+                            color: Colors.white.withOpacity(0.8),
                           ),
                           textAlign: TextAlign.center,
                         ),
                       ],
                     ),
                   ),
-
+                  
                   const SizedBox(height: 24),
-
-                  // Language support section
-                  _glassCard(
-                    child: _buildInfoCard(
-                      icon: Icons.language_rounded,
-                      title: 'زبان کی سہولت',
-                      titleEng: 'Language Support',
-                      content:
-                          'آپ اردو یا رومن اردو میں بات کر سکتے ہیں۔ جیسے "Main pareshaan hun" یا "میں پریشان ہوں" — دونوں طریقے درست ہیں۔',
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Examples section
-                  _glassCard(
-                    child: _buildInfoCard(
-                      icon: Icons.lightbulb_outline_rounded,
-                      title: 'مثالیں',
-                      titleEng: 'Examples',
-                      content:
-                          '• "Mujhe anxiety ho rahi hai"\n• "میں پڑھائی میں توجہ نہیں دے پا رہا"\n• "گھر میں مسائل ہیں"',
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Privacy assurance
-                  _glassCard(
-                    child: _buildInfoCard(
-                      icon: Icons.lock_outline_rounded,
-                      title: 'محفوظیت',
-                      titleEng: 'Privacy',
-                      content:
-                          'آپ کی تمام باتیں محفوظ ہیں اور یہ آپ کے فون میں ہی رہتی ہیں۔ کہیں اور شیئر نہیں ہوتیں۔',
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Important note about Urdu only
-                  _glassCard(
-                    child: Row(
+                  
+                  // Input options
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: _glassDecoration(),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            Icons.info_outline_rounded,
-                            color: Colors.orange,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'ماڈل صرف اردو میں بات کر سکتا ہے کیونکہ یہ اسی زبان پر تربیت یافتہ ہے۔',
-                            style: GoogleFonts.notoNaskhArabic(
-                              fontSize: 14,
-                              color: Colors.orange.shade200,
-                              height: 1.4,
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.edit_outlined,
+                              color: Colors.greenAccent,
+                              size: 28,
                             ),
-                          ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'آپ کیسے لکھ سکتے ہیں',
+                              style: GoogleFonts.notoNaskhArabic(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        _buildInputOption(
+                          icon: Icons.text_fields,
+                          title: 'اردو میں',
+                          subtitle: 'Pure Urdu',
+                          example: 'میں آج بہت پریشان ہوں',
+                          color: Colors.greenAccent,
+                        ),
+                        
+                        const SizedBox(height: 12),
+                        
+                        _buildInputOption(
+                          icon: Icons.abc,
+                          title: 'انگریزی میں',
+                          subtitle: 'English',
+                          example: 'I am feeling very worried today',
+                          color: Colors.blueAccent,
+                        ),
+                        
+                        const SizedBox(height: 12),
+                        
+                        _buildInputOption(
+                          icon: Icons.keyboard,
+                          title: 'رومن اردو میں',
+                          subtitle: 'Roman Urdu',
+                          example: 'Main aaj bohat pareshan hun',
+                          color: Colors.orangeAccent,
                         ),
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 40),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Output explanation
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: _glassDecoration(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'میں کیسے جواب دوں گا',
+                              style: GoogleFonts.notoNaskhArabic(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.record_voice_over,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'ہمیشہ اردو میں',
+                                style: GoogleFonts.notoNaskhArabic(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Always in Urdu',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  color: Colors.white.withOpacity(0.7),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 16),
+                        
+                        Text(
+                          'آپ جس بھی زبان میں لکھیں، میں ہمیشہ اردو میں جواب دوں گا کیونکہ یہ ماڈل خاص طور پر اردو کے لیے تیار کیا گیا ہے۔',
+                          style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 16,
+                            color: Colors.white.withOpacity(0.9),
+                            height: 1.6,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        
+                        const SizedBox(height: 8),
+                        
+                        Text(
+                          'Whatever language you write in, I will always respond in Urdu as this model is specifically designed for Urdu.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.7),
+                            height: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Benefits
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: _glassDecoration(),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.star_outline,
+                          color: Colors.yellowAccent,
+                          size: 32,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'فائدے',
+                          style: GoogleFonts.notoNaskhArabic(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        _buildBenefit('آپ کو جیسے بھی آسان لگے، اسی طرح لکھ سکتے ہیں'),
+                        _buildBenefit('اردو میں بہترین اور گہری گفتگو'),
+                        _buildBenefit('آپ کی ثقافت اور زبان کا احترام'),
+                      ],
+                    ),
+                  ),
+                  
+                  // Extra space for bottom button
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
           ),
-
-          // Fixed navigation buttons at bottom
+          
+          // Glass navigation button (bottom right)
           Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.3),
-                    Colors.black.withOpacity(0.6),
-                  ],
-                ),
-              ),
-              child: SafeArea(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Back button
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          print('Back button tapped'); // Debug
-                          Navigator.of(context).pop();
-                        },
-                        borderRadius: BorderRadius.circular(28),
-                        child: Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.4),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.arrow_back_ios,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+            bottom: 30,
+            right: 30,
+            child: SafeArea(
+              child: GestureDetector(
+                onTap: onNext,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: _glassDecoration().copyWith(
+                    borderRadius: BorderRadius.circular(50),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'آگے بڑھیں',
+                        style: GoogleFonts.notoNaskhArabic(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
                         ),
                       ),
-                    ),
-
-                    // Next button
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          print('Next button tapped'); // Debug
-                          context.go('/consent');
-                        },
-                        borderRadius: BorderRadius.circular(32),
-                        child: Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.4),
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 16,
-                                offset: const Offset(0, 6),
-                              ),
-                              BoxShadow(
-                                color: Colors.white.withOpacity(0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, -2),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.arrow_forward_ios,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.arrow_forward,
+                        color: Colors.white,
+                        size: 20,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -269,89 +300,120 @@ class LanguageScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoCard({
-    required IconData icon,
-    required String title,
-    required String titleEng,
-    required String content,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                icon,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.notoNaskhArabic(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    titleEng,
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Text(
-          content,
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 14,
-            color: Colors.white.withOpacity(0.9),
-            height: 1.5,
-          ),
+  BoxDecoration _glassDecoration({double opacity = 0.15}) {
+    return BoxDecoration(
+      color: Colors.white.withOpacity(opacity),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: Colors.white.withOpacity(0.2),
+        width: 1,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.1),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
         ),
       ],
     );
   }
 
-  Widget _glassCard({required Widget child}) {
+  Widget _buildInputOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String example,
+    required Color color,
+  }) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      margin: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(18),
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(15),
         border: Border.all(
-          color: Colors.white.withOpacity(0.2),
+          color: color.withOpacity(0.3),
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.notoNaskhArabic(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  example,
+                  style: GoogleFonts.notoNaskhArabic(
+                    fontSize: 14,
+                    color: color.withOpacity(0.9),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-      child: child,
+    );
+  }
+
+  Widget _buildBenefit(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            color: Colors.greenAccent,
+            size: 18,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.notoNaskhArabic(
+                fontSize: 14,
+                color: Colors.white.withOpacity(0.9),
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

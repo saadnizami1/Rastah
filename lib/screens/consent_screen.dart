@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:go_router/go_router.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
 
 class ConsentScreen extends StatefulWidget {
-  const ConsentScreen({super.key});
+  final VoidCallback? onNext; // Add callback for navigation
+  
+  const ConsentScreen({super.key, this.onNext});
 
   @override
   State<ConsentScreen> createState() => _ConsentScreenState();
@@ -189,12 +190,16 @@ class _ConsentScreenState extends State<ConsentScreen> {
 
                   const SizedBox(height: 30),
 
-                  // Continue button
+                  // Continue button - FIXED: Use callback instead of router
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed:
-                          _canProceed ? () => context.go('/personalization') : null,
+                      onPressed: _canProceed ? () {
+                        // Use the callback passed from OnboardingPager
+                        if (widget.onNext != null) {
+                          widget.onNext!();
+                        }
+                      } : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _canProceed
                             ? Colors.greenAccent.withOpacity(0.8)
@@ -207,44 +212,19 @@ class _ConsentScreenState extends State<ConsentScreen> {
                       ),
                       child: Text(
                         _canProceed
-                            ? 'رضامندی، آگے بڑھیں'
-                            : 'پہلے تصدیق کریں',
+                            ? 'آگے بڑھیں - Continue'
+                            : 'برائے کرم تمام شرائط کو قبول کریں',
                         style: GoogleFonts.notoNaskhArabic(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: _canProceed ? Colors.black87 : Colors.white54,
                         ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 16),
-
-                  // Emergency contact info
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: _glassDecoration().copyWith(
-                      color: Colors.red.withOpacity(0.25),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.emergency_outlined,
-                            color: Colors.white, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'ہنگامی صورتحال میں: 1122 یا قریبی ہسپتال سے رابطہ کریں',
-                            style: GoogleFonts.notoNaskhArabic(
-                              fontSize: 14,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -255,9 +235,9 @@ class _ConsentScreenState extends State<ConsentScreen> {
   }
 
   // Glass effect decoration
-  BoxDecoration _glassDecoration() {
+  BoxDecoration _glassDecoration({double opacity = 0.15}) {
     return BoxDecoration(
-      color: Colors.white.withOpacity(0.15),
+      color: Colors.white.withOpacity(opacity),
       borderRadius: BorderRadius.circular(20),
       border: Border.all(
         color: Colors.white.withOpacity(0.2),
@@ -287,7 +267,11 @@ class _ConsentScreenState extends State<ConsentScreen> {
         children: [
           Row(
             children: [
-              Icon(icon, color: Colors.white, size: 24),
+              Icon(
+                icon,
+                color: Colors.white.withOpacity(0.9),
+                size: 24,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -305,7 +289,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                       titleEng,
                       style: GoogleFonts.poppins(
                         fontSize: 12,
-                        color: Colors.white70,
+                        color: Colors.white.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -317,8 +301,8 @@ class _ConsentScreenState extends State<ConsentScreen> {
           Text(
             content,
             style: GoogleFonts.notoNaskhArabic(
-              fontSize: 15,
-              color: Colors.white,
+              fontSize: 14,
+              color: Colors.white.withOpacity(0.9),
               height: 1.6,
             ),
           ),
@@ -329,59 +313,49 @@ class _ConsentScreenState extends State<ConsentScreen> {
 
   Widget _buildCheckboxTile({
     required bool value,
-    required ValueChanged<bool?> onChanged,
+    required Function(bool?) onChanged,
     required String title,
     required String subtitle,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: InkWell(
-        onTap: () => onChanged(!value),
-        borderRadius: BorderRadius.circular(12),
-        child: Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: value ? Colors.greenAccent : Colors.white70,
-                  width: 2,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Checkbox(
+            value: value,
+            onChanged: onChanged,
+            activeColor: Colors.greenAccent,
+            checkColor: Colors.black,
+            side: BorderSide(
+              color: Colors.white.withOpacity(0.5),
+              width: 2,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.notoNaskhArabic(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(6),
-                color: value
-                    ? Colors.greenAccent.withOpacity(0.8)
-                    : Colors.transparent,
-              ),
-              child: value
-                  ? Icon(Icons.check, size: 16, color: Colors.black87)
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.notoNaskhArabic(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.white.withOpacity(0.7),
                   ),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
