@@ -1,21 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
-
-// Import your enhanced AI service and Voice service
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart' hide TextDirection;
+import 'package:url_launcher/url_launcher.dart';
 import '../services/ai_service.dart';
-import '../services/voice_service.dart';
+import '../chat_helpers.dart';
+import '../chat_state_manager.dart';
+// import 'ai_service.dart'; // Import your enhanced AI service
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
-
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  _ChatScreenState createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
@@ -23,409 +20,133 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   
-  List<ChatMessage> _messages = [];
-  List<Map<String, dynamic>> _conversationHistory = [];
+  List<Map<String, String>> _conversations = [];
+  String _currentMode = 'friend';
   bool _isTyping = false;
-  bool _isTherapyMode = true;
-  String _userName = '';
-  String _profileImagePath = '';
-  bool _isAIConfigured = false;
-  late AnimationController _typingController;
-  int _messageCount = 0;
-  
-  // Voice-related variables
-  final VoiceService _voiceService = VoiceService();
   bool _isListening = false;
   bool _isSpeaking = false;
-  String _recognizedText = '';
-  late AnimationController _voiceAnimationController;
+  bool _showProfilePanel = false;
+  Map<String, dynamic> _userProfile = {};
+  List<Map<String, dynamic>> _conversationSummaries = [];
+  Map<String, dynamic> _moodLogs = {};
   
+  // Animation controllers
+  late AnimationController _typingAnimationController;
+  late AnimationController _profilePanelController;
+  late AnimationController _messageAnimationController;
+  
+  // Animations
+  late Animation<double> _typingAnimation;
+  late Animation<Offset> _profilePanelAnimation;
+  late Animation<double> _messageScaleAnimation;
+
   @override
   void initState() {
     super.initState();
-    _initializeChat();
-    _typingController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat();
-    
-    // Initialize voice animation controller
-    _voiceAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..repeat(reverse: true);
-    
-    // Initialize voice service
-    _initializeVoiceService();
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _addWelcomeMessage();
-      _checkFirstTimeUser();
-      
-      // Start AI warm-up as early as possible
-      if (AIService.isConfigured()) {
-        _warmUpAIService();
-      }
-    });
+    _initializeAnimations();
+    _loadData();
+    _initializeServices();
   }
 
-  // Warm up AI service for faster first response
-  Future<void> _warmUpAIService() async {
-    if (_isAIConfigured) {
-      try {
-        // Background warm-up call - don't await in initializeChat
-        await AIService.generateResponse(
-          userMessage: "test",
-          isTherapyMode: false,
-          conversationHistory: [],
-          userProfile: {},
-        );
-      } catch (e) {
-        // Ignore warm-up errors
-      }
-    }
+  void _initializeAnimations() {
+    _typingAnimationController = AnimationController(
+      duration: Duration(milliseconds: 1500),
+      vsync: this,
+    );
+    
+    _profilePanelController = AnimationController(
+      duration: Duration(milliseconds: 350),
+      vsync: this,
+    );
+    
+    _messageAnimationController = AnimationController(
+      duration: Duration(milliseconds: 300),
+      vsync: this,
+    );
+    
+    _typingAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _typingAnimationController, curve: Curves.easeInOut),
+    );
+    
+    _profilePanelAnimation = Tween<Offset>(
+      begin: Offset(1.0, 0.0),
+      end: Offset(0.0, 0.0),
+    ).animate(CurvedAnimation(parent: _profilePanelController, curve: Curves.easeInOut));
+    
+    _messageScaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _messageAnimationController, curve: Curves.elasticOut),
+    );
   }
 
-  Future<void> _initializeVoiceService() async {
-    await _voiceService.initialize();
-    
-    // Listen to voice service streams
-    _voiceService.listeningState.listen((isListening) {
-      if (mounted) {
-        setState(() {
-          _isListening = isListening;
-        });
-      }
-    });
-    
-    _voiceService.speakingState.listen((isSpeaking) {
-      if (mounted) {
-        setState(() {
-          _isSpeaking = isSpeaking;
-        });
-      }
-    });
-    
-    _voiceService.recognizedText.listen((recognizedText) {
-      if (mounted) {
-        setState(() {
-          _recognizedText = recognizedText;
-        });
-        
-        // Auto-fill the message controller as user speaks
-        if (recognizedText.isNotEmpty) {
-          _messageController.text = recognizedText;
-        }
-      }
-    });
+  void _initializeServices() async {
+    await AIService.initializeTTS();
+    await AIService.initializeSTT();
+  }
+
+  void _loadData() async {
+    _userProfile = await AIService.getUserProfile();
+    _conversationSummaries = await AIService.getConversationSummaries();
+    _moodLogs = await AIService.getMoodLogs();
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _typingController.dispose();
-    _voiceAnimationController.dispose();
+    _typingAnimationController.dispose();
+    _profilePanelController.dispose();
+    _messageAnimationController.dispose();
     _messageController.dispose();
     _scrollController.dispose();
-    _voiceService.dispose();
+    AIService.stopSpeaking();
+    AIService.stopListening();
     super.dispose();
   }
 
-  Future<void> _initializeChat() async {
-    await _loadUserData();
-    await _loadChatHistory();
-    _checkAIConfiguration();
-    
-    // Start warm-up in background (don't await)
-    if (_isAIConfigured) {
-      _warmUpAIService();
-    }
-  }
-
-  void _checkAIConfiguration() {
-    setState(() {
-      _isAIConfigured = AIService.isConfigured();
-    });
-  }
-
-  Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _userName = prefs.getString('name') ?? 'دوست';
-      _profileImagePath = prefs.getString('profile_image') ?? '';
-    });
-  }
-
-  Future<void> _loadChatHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    final chatHistory = prefs.getString('chat_history');
-    final conversationHistory = prefs.getString('conversation_history');
-    
-    if (chatHistory != null) {
-      try {
-        final List<dynamic> decoded = json.decode(chatHistory);
-        setState(() {
-          _messages = decoded.map((msg) => ChatMessage.fromJson(msg)).toList();
-          _messageCount = _messages.where((msg) => msg.isUser).length;
-        });
-      } catch (e) {
-        print('Error loading chat history: $e');
-        setState(() {
-          _messages = [];
-          _messageCount = 0;
-        });
-      }
-    }
-    
-    if (conversationHistory != null) {
-      try {
-        final List<dynamic> decoded = json.decode(conversationHistory);
-        setState(() {
-          _conversationHistory = decoded.map((item) {
-            final Map<String, dynamic> map = item as Map<String, dynamic>;
-            return {
-              'role': map['role']?.toString() ?? '',
-              'content': map['content']?.toString() ?? '',
-            };
-          }).toList();
-        });
-      } catch (e) {
-        print('Error loading conversation history: $e');
-        setState(() {
-          _conversationHistory = [];
-        });
-      }
-    }
-  }
-
-  Future<void> _saveChatHistory() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final encoded = json.encode(_messages.map((msg) => msg.toJson()).toList());
-      final conversationEncoded = json.encode(_conversationHistory);
-      
-      await prefs.setString('chat_history', encoded);
-      await prefs.setString('conversation_history', conversationEncoded);
-    } catch (e) {
-      print('Error saving chat history: $e');
-    }
-  }
-
-  void _addWelcomeMessage() {
-    final welcomeMessage = ChatMessage(
-      text: 'السلام علیکم $_userName! میں رستہ ہوں، آپ کا پیشہ ور AI تھراپسٹ۔ آپ آج کیسا محسوس کر رہے ہیں؟ مہربانی کر کے اپنے احساسات کے بارے میں تفصیل سے بتائیں۔',
-      isUser: false,
-      timestamp: DateTime.now(),
-    );
-    
-    setState(() {
-      _messages.add(welcomeMessage);
-    });
-    _saveChatHistory();
-  }
-
-  // Voice interaction methods
-  Future<void> _startListening() async {
-    if (_isTyping) return; // Don't start listening while AI is responding
-    
-    try {
-      final hasPermission = await _voiceService.checkMicrophonePermission();
-      if (!hasPermission) {
-        final granted = await _voiceService.requestMicrophonePermission();
-        if (!granted) {
-          _showPermissionDialog();
-          return;
-        }
-      }
-      
-      _messageController.clear();
-      await _voiceService.startListening();
-    } catch (e) {
-      _showErrorSnackBar('آواز سننے میں مسئلہ: $e');
-    }
-  }
-
-  Future<void> _stopListening() async {
-    await _voiceService.stopListening();
-    
-    // Auto-send message if we have recognized text
-    if (_recognizedText.isNotEmpty && _messageController.text.isNotEmpty) {
-      _sendMessage();
-    }
-  }
-
-  Future<void> _speakMessage(String text) async {
-    try {
-      if (_isSpeaking) {
-        await _voiceService.stop();
-      } else {
-        await _voiceService.speak(text);
-      }
-    } catch (e) {
-      _showErrorSnackBar('TTS Error: $e');
-    }
-  }
-
-  void _showPermissionDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'مائیکروفون کی اجازت درکار',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        content: Text(
-          'آپ کی آواز سننے کے لیے مائیکروفون کی اجازت ضروری ہے۔',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 16,
-            color: Colors.white,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'بعد میں',
-              style: GoogleFonts.notoNaskhArabic(color: Colors.grey),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await _voiceService.requestMicrophonePermission();
-            },
-            child: Text(
-              'اجازت دیں',
-              style: GoogleFonts.notoNaskhArabic(color: Colors.greenAccent),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: GoogleFonts.notoNaskhArabic(color: Colors.white),
-        ),
-        backgroundColor: Colors.red.withOpacity(0.8),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  void _sendMessage() {
-    if (_messageController.text.trim().isEmpty || _isTyping) return; // Block if AI is responding
-
-    final userMessage = ChatMessage(
-      text: _messageController.text.trim(),
-      isUser: true,
-      timestamp: DateTime.now(),
-    );
+  void _sendMessage() async {
+    final message = _messageController.text.trim();
+    if (message.isEmpty) return;
 
     setState(() {
-      _messages.add(userMessage);
+      _conversations.add({'role': 'user', 'content': message});
       _isTyping = true;
-      _messageCount++;
+      _messageController.clear();
     });
 
-    _conversationHistory.add({
-      'role': 'user',
-      'content': userMessage.text,
-    });
-
-    if (_conversationHistory.length > 20) {
-      _conversationHistory = _conversationHistory.sublist(_conversationHistory.length - 20);
-    }
-
-    final messageText = _messageController.text.trim();
-    _messageController.clear();
-    _recognizedText = ''; // Clear recognized text
+    _typingAnimationController.repeat();
     _scrollToBottom();
-    _saveChatHistory();
 
-    _generateAIResponse(messageText);
-  }
-
-  // Optimized AI response generation
-  void _generateAIResponse(String userInput) async {
     try {
-      String aiResponse;
-      
-      if (_isAIConfigured) {
-        final isFirstMessage = _messageCount <= 1;
-        
-        if (isFirstMessage) {
-          // Fastest possible first response - no profile loading, no history
-          aiResponse = await AIService.generateResponse(
-            userMessage: userInput,
-            isTherapyMode: false,
-            conversationHistory: [],
-            userProfile: {},
-          );
-        } else {
-          // Normal response with full context
-          final userProfile = await AIService.getUserProfile();
-          aiResponse = await AIService.generateResponse(
-            userMessage: userInput,
-            isTherapyMode: _isTherapyMode,
-            conversationHistory: _conversationHistory.map((item) => {
-              'role': item['role'].toString(),
-              'content': item['content'].toString(),
-            }).toList(),
-            userProfile: userProfile,
-          );
-        }
-      } else {
-        await Future.delayed(const Duration(milliseconds: 500));
-        aiResponse = 'معذرت، سروس دستیاب نہیں ہے۔ کچھ دیر بعد کوشش کریں۔';
-      }
-      
-      final aiMessage = ChatMessage(
-        text: aiResponse,
-        isUser: false,
-        timestamp: DateTime.now(),
+      final response = await AIService.generateResponse(
+        userMessage: message,
+        mode: _currentMode,
+        conversationHistory: _conversations,
+        userProfile: _userProfile,
       );
 
-      _conversationHistory.add({
-        'role': 'assistant',
-        'content': aiResponse,
+      setState(() {
+        _conversations.add({'role': 'assistant', 'content': response});
+        _isTyping = false;
       });
 
-      setState(() {
-        _isTyping = false;
-        _messages.add(aiMessage);
+      _typingAnimationController.stop();
+      _messageAnimationController.forward().then((_) {
+        _messageAnimationController.reset();
       });
-      
+
+      // Auto-save conversation summary
+      await AIService.autoSaveConversationSummary(_conversations);
+      await AIService.incrementChatCounter();
+
       _scrollToBottom();
-      _saveChatHistory();
-      
     } catch (e) {
-      print('Error generating AI response: $e');
-      
-      final fallbackMessage = ChatMessage(
-        text: 'معذرت، کوئی مسئلہ پیش آیا ہے۔ مہربانی کر کے اپنا انٹرنیٹ کنکشن چیک کریں اور دوبارہ کوشش کریں۔',
-        isUser: false,
-        timestamp: DateTime.now(),
-      );
-
       setState(() {
+        _conversations.add({
+          'role': 'assistant', 
+          'content': 'معذرت، کوئی خرابی ہوئی ہے۔ براہ کرم دوبارہ کوشش کریں۔ 🔄'
+        });
         _isTyping = false;
-        _messages.add(fallbackMessage);
       });
-      
-      _scrollToBottom();
-      _saveChatHistory();
+      _typingAnimationController.stop();
     }
   }
 
@@ -434,297 +155,197 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
+          duration: Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
       }
     });
   }
 
-  void _toggleTherapyMode() {
-    setState(() {
-      _isTherapyMode = !_isTherapyMode;
-    });
+  void _startListening() async {
+    if (_isListening) {
+      await AIService.stopListening();
+      setState(() => _isListening = false);
+      return;
+    }
 
-    final modeMessage = ChatMessage(
-      text: _isTherapyMode
-        ? 'اب میں Therapy Mode میں ہوں - میں زیادہ تفصیل سے آپ کی بات سنوں گا اور thoughtful responses دوں گا۔'
-        : 'اب میں Quick Q&A Mode میں ہوں - میں مختصر اور direct جوابات دوں گا تاکہ آپ کو فوری مدد مل سکے۔',
-      isUser: false,
-      timestamp: DateTime.now(),
-      isSystemMessage: true,
-    );
-
-    setState(() {
-      _messages.add(modeMessage);
-    });
+    setState(() => _isListening = true);
     
-    _saveChatHistory();
-    _scrollToBottom();
+    try {
+      final result = await AIService.listenToSpeech();
+      if (result.isNotEmpty && !result.contains('خرابی') && !result.contains('دستیاب نہیں')) {
+        _messageController.text = result;
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('آواز سننے میں خرابی ہوئی')),
+      );
+    } finally {
+      setState(() => _isListening = false);
+    }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: _buildProfileDrawer(),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/chat.png',
-              fit: BoxFit.cover,
+  void _speakMessage(String text) async {
+    if (_isSpeaking) {
+      await AIService.stopSpeaking();
+      setState(() => _isSpeaking = false);
+      return;
+    }
+
+    setState(() => _isSpeaking = true);
+    await AIService.speakText(text);
+    setState(() => _isSpeaking = false);
+  }
+
+  void _toggleProfilePanel() {
+    setState(() => _showProfilePanel = !_showProfilePanel);
+    if (_showProfilePanel) {
+      _profilePanelController.forward();
+    } else {
+      _profilePanelController.reverse();
+    }
+  }
+
+  void _showModeSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 10,
+              offset: Offset(0, -5),
             ),
-          ),
-          
-          Column(
-            children: [
-              Container(
-                padding: EdgeInsets.only(
-                  top: MediaQuery.of(context).padding.top + 10,
-                  left: 16,
-                  right: 16,
-                  bottom: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.3),
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: EdgeInsets.only(top: 10),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI Mode منتخب کریں',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2E7D63),
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
-                        ),
-                        child: _profileImagePath.isNotEmpty
-                          ? ClipOval(
-                              child: Image.file(
-                                File(_profileImagePath),
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : Center(
-                              child: Text(
-                                _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                      ),
+                  SizedBox(height: 15),
+                  ...AIService.getAvailableModes().entries.map((mode) => 
+                    _buildModeOption(
+                      mode.key, 
+                      mode.value['name']!, 
+                      mode.value['emoji']!,
                     ),
-                    
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Text(
-                            'رستہ - آپ کا تھراپسٹ',
-                            style: GoogleFonts.notoNaskhArabic(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: _isAIConfigured ? Colors.green : Colors.orange,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _isAIConfigured ? 'Professional Mode' : 'Basic Mode',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: Colors.white.withOpacity(0.8),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    GestureDetector(
-                      onTap: _showModeMenu,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _isTherapyMode 
-                            ? Colors.green.withOpacity(0.3)
-                            : Colors.blue.withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _isTherapyMode ? Colors.green : Colors.blue,
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _isTherapyMode ? Icons.psychology : Icons.quiz,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _isTherapyMode ? 'Therapy' : 'Quick',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(
-                              Icons.keyboard_arrow_down,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ).toList(),
+                ],
               ),
-              
-              Expanded(
-                child: _buildChatArea(),
-              ),
-              _buildEnhancedMessageInput(),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildChatArea() {
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(16),
-      itemCount: _messages.length + (_isTyping ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _messages.length && _isTyping) {
-          return _buildTypingIndicator();
-        }
-        
-        final message = _messages[index];
-        return _buildEnhancedMessageBubble(message, index);
-      },
+  Widget _buildModeOption(String modeKey, String modeName, String emoji) {
+    bool isSelected = _currentMode == modeKey;
+    return Container(
+      margin: EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            setState(() => _currentMode = modeKey);
+            Navigator.pop(context);
+          },
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isSelected ? Color(0xFF2E7D63).withOpacity(0.1) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected ? Color(0xFF2E7D63) : Colors.grey[300]!,
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(emoji, style: TextStyle(fontSize: 24)),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    modeName,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected ? Color(0xFF2E7D63) : Colors.black87,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Icon(Icons.check_circle, color: Color(0xFF2E7D63)),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildEnhancedMessageBubble(ChatMessage message, int index) {
-    final isLastAiMessage = !message.isUser && 
-        (index == _messages.length - 1 || 
-         (index < _messages.length - 1 && _messages[index + 1].isUser));
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+  Widget _buildChatBubble(Map<String, String> message, int index) {
+    bool isUser = message['role'] == 'user';
+    
+    return Container(
+      margin: EdgeInsets.symmetric(vertical: 4, horizontal: 16),
       child: Row(
-        mainAxisAlignment: message.isUser 
-          ? MainAxisAlignment.end 
-          : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (!message.isUser) ...[
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: message.isSystemMessage == true 
-                  ? Colors.orange.withOpacity(0.8)
-                  : Colors.green.withOpacity(0.8),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                message.isSystemMessage == true 
-                  ? Icons.info_outline
-                  : Icons.psychology,
-                color: Colors.white,
-                size: 18,
-              ),
+          if (!isUser) ...[
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Color(0xFF2E7D63),
+              child: Icon(Icons.psychology, color: Colors.white, size: 18),
             ),
-            const SizedBox(width: 8),
-            
-            // TTS button for AI messages
-            if (!message.isSystemMessage!)
-              GestureDetector(
-                onTap: () => _speakMessage(message.text),
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: _isSpeaking && isLastAiMessage
-                      ? Colors.blue.withOpacity(0.3)
-                      : Colors.white.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _isSpeaking && isLastAiMessage
-                        ? Colors.blue
-                        : Colors.white.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: AnimatedBuilder(
-                    animation: _isSpeaking && isLastAiMessage 
-                      ? _voiceAnimationController 
-                      : _typingController,
-                    builder: (context, child) {
-                      return Icon(
-                        _isSpeaking && isLastAiMessage 
-                          ? Icons.volume_up 
-                          : Icons.volume_up_outlined,
-                        size: 14,
-                        color: _isSpeaking && isLastAiMessage
-                          ? Colors.blue.withOpacity(0.7 + _voiceAnimationController.value * 0.3)
-                          : Colors.white.withOpacity(0.7),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
-          
           Flexible(
             child: Container(
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
-              padding: const EdgeInsets.all(14),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: message.isUser
-                  ? Colors.blue.withOpacity(0.8)
-                  : message.isSystemMessage == true
-                    ? Colors.orange.withOpacity(0.8)
-                    : Colors.white.withOpacity(0.95),
-                borderRadius: BorderRadius.circular(16),
+                color: isUser ? Color(0xFF2E7D63) : Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
+                  bottomLeft: Radius.circular(isUser ? 18 : 4),
+                  bottomRight: Radius.circular(isUser ? 4 : 18),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
                   ),
                 ],
               ),
@@ -732,58 +353,48 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    message.text,
-                    style: GoogleFonts.notoNaskhArabic(
+                    message['content']!,
+                    style: TextStyle(
+                      color: isUser ? Colors.white : Colors.black87,
                       fontSize: 16,
-                      color: message.isUser 
-                        ? Colors.white 
-                        : Colors.black87,
                       height: 1.4,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatTime(message.timestamp),
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: message.isUser 
-                        ? Colors.white.withOpacity(0.7)
-                        : Colors.black54,
+                  if (!isUser) ...[
+                    SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: () => _speakMessage(message['content']!),
+                          borderRadius: BorderRadius.circular(20),
+                          child: Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              _isSpeaking ? Icons.volume_off : Icons.volume_up,
+                              size: 18,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
           ),
-          
-          if (message.isUser) ...[
-            const SizedBox(width: 8),
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.8),
-                shape: BoxShape.circle,
-                image: _profileImagePath.isNotEmpty
-                  ? DecorationImage(
-                      image: FileImage(File(_profileImagePath)),
-                      fit: BoxFit.cover,
-                    )
+          if (isUser) ...[
+            SizedBox(width: 8),
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.grey[300],
+              backgroundImage: _userProfile['profilePic']?.isNotEmpty == true 
+                  ? FileImage(File(_userProfile['profilePic'])) 
                   : null,
-              ),
-              child: _profileImagePath.isEmpty
-                ? Center(
-                    child: Text(
-                      _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                : null,
+              child: _userProfile['profilePic']?.isEmpty != false 
+                  ? Icon(Icons.person, color: Colors.grey[600], size: 18) 
+                  : null,
             ),
           ],
         ],
@@ -792,51 +403,54 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildTypingIndicator() {
-    final isFirstMessage = _messageCount <= 1;
-    
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Container(
+      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       child: Row(
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.8),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.psychology,
-              color: Colors.white,
-              size: 18,
-            ),
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: Color(0xFF2E7D63),
+            child: Icon(Icons.psychology, color: Colors.white, size: 18),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.95),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTypingDot(0),
-                const SizedBox(width: 4),
-                _buildTypingDot(1),
-                const SizedBox(width: 4),
-                _buildTypingDot(2),
-                const SizedBox(width: 8),
-                Text(
-                  isFirstMessage 
-                    ? 'پہلا جواب تیار کر رہا ہے...'
-                    : 'جواب لکھ رہا ہے...',
-                  style: GoogleFonts.notoNaskhArabic(
-                    fontSize: 14,
-                    color: Colors.black54,
-                  ),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
                 ),
               ],
+            ),
+            child: AnimatedBuilder(
+              animation: _typingAnimation,
+              builder: (context, child) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (index) {
+                    double delay = index * 0.2;
+                    double animationValue = (_typingAnimation.value - delay).clamp(0.0, 1.0);
+                    return Container(
+                      margin: EdgeInsets.symmetric(horizontal: 2),
+                      child: Transform.translate(
+                        offset: Offset(0, -10 * (0.5 - (animationValue - 0.5).abs()) * 2),
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Color(0xFF2E7D63),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                );
+              },
             ),
           ),
         ],
@@ -844,497 +458,640 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTypingDot(int index) {
-    return AnimatedBuilder(
-      animation: _typingController,
-      builder: (context, child) {
-        final delay = index * 0.2;
-        final animationValue = (_typingController.value + delay) % 1.0;
-        final opacity = (animationValue < 0.5) 
-          ? (animationValue * 2) 
-          : ((1.0 - animationValue) * 2);
-        
-        return Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: Colors.green.withOpacity(opacity),
-            shape: BoxShape.circle,
+  Widget _buildProfilePanel() {
+    return SlideTransition(
+      position: _profilePanelAnimation,
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.85,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 10,
+              offset: Offset(-5, 0),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildProfileHeader(),
+                SizedBox(height: 30),
+                _buildProfileSection('تفصیلات تبدیل کریں', Icons.edit, _showEditProfile),
+                _buildProfileSection('میرا موڈ', Icons.mood, _showMoodTracker),
+                _buildProfileSection('پچھلی گفتگو', Icons.history, _showPastConversations),
+                _buildProfileSection('نئی گفتگو شروع کریں', Icons.add_comment, _startNewChat),
+                _buildProfileSection('موڈ کی تاریخ', Icons.timeline, _showMoodLogs),
+                _buildProfileSection('راستہ کے بارے میں', Icons.info, _showAboutRastah),
+                _buildProfileSection('ڈیولپر کے بارے میں', Icons.person, _showAboutDeveloper),
+                _buildProfileSection('تمام ڈیٹا صاف کریں', Icons.delete_forever, _showClearDataDialog, 
+                  color: Colors.red),
+              ],
+            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _buildEnhancedMessageInput() {
-    return Container(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        bottom: MediaQuery.of(context).padding.bottom + 16,
-        top: 16,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-      ),
-      child: Column(
-        children: [
-          // Voice recognition indicator
-          if (_isListening)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedBuilder(
-                    animation: _voiceAnimationController,
-                    builder: (context, child) {
-                      return Icon(
-                        Icons.mic,
-                        color: Colors.green.withOpacity(0.5 + _voiceAnimationController.value * 0.5),
-                        size: 16,
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _recognizedText.isEmpty ? 'سن رہا ہوں...' : _recognizedText,
-                    style: GoogleFonts.notoNaskhArabic(
-                      color: Colors.green,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+  Widget _buildProfileHeader() {
+    return Row(
+      children: [
+        Stack(
+          children: [
+            CircleAvatar(
+              radius: 35,
+              backgroundColor: Colors.grey[300],
+              backgroundImage: _userProfile['profilePic']?.isNotEmpty == true 
+                  ? FileImage(File(_userProfile['profilePic'])) 
+                  : null,
+              child: _userProfile['profilePic']?.isEmpty != false 
+                  ? Icon(Icons.person, size: 40, color: Colors.grey[600]) 
+                  : null,
+            ),
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                padding: EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(color: Colors.black26, blurRadius: 4),
+                  ],
+                ),
+                child: Text(
+                  _userProfile['currentMood'] ?? '😐',
+                  style: TextStyle(fontSize: 16),
+                ),
               ),
             ),
-          
-          Row(
+          ],
+        ),
+        SizedBox(width: 15),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Voice input button
-              Container(
-                margin: const EdgeInsets.only(right: 8),
-                child: GestureDetector(
-                  onTap: _isTyping ? null : (_isListening ? _stopListening : _startListening),
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: _isTyping 
-                        ? Colors.grey.withOpacity(0.3)
-                        : _isListening 
-                          ? Colors.red.withOpacity(0.2)
-                          : Colors.green.withOpacity(0.2),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: _isTyping 
-                          ? Colors.grey.withOpacity(0.5)
-                          : _isListening 
-                            ? Colors.red.withOpacity(0.5)
-                            : Colors.green.withOpacity(0.5),
-                        width: 2,
-                      ),
-                    ),
-                    child: AnimatedBuilder(
-                      animation: _isListening ? _voiceAnimationController : _typingController,
-                      builder: (context, child) {
-                        return Icon(
-                          _isListening ? Icons.stop : Icons.mic,
-                          color: _isTyping 
-                            ? Colors.grey.withOpacity(0.7)
-                            : _isListening 
-                              ? Colors.red.withOpacity(0.7 + _voiceAnimationController.value * 0.3)
-                              : Colors.green.withOpacity(0.8),
-                          size: 20,
-                        );
-                      },
-                    ),
-                  ),
+              Text(
+                _userProfile['name']?.isNotEmpty == true 
+                    ? _userProfile['name'] 
+                    : 'صارف',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2E7D63),
                 ),
               ),
-              
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(_isTyping ? 0.5 : 0.95),
-                    borderRadius: BorderRadius.circular(25),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _messageController,
-                    enabled: _isAIConfigured && !_isTyping, // Disable when AI is responding
-                    decoration: InputDecoration(
-                      hintText: _isTyping
-                        ? 'AI جواب لکھ رہا ہے...'
-                        : _isAIConfigured 
-                          ? (_messageCount <= 1 
-                              ? 'پہلے مختصر پیغام لکھیں...' 
-                              : 'اپنے احساسات یہاں لکھیں...')
-                          : 'سروس دستیاب نہیں...',
-                      hintStyle: GoogleFonts.notoNaskhArabic(
-                        fontSize: 14,
-                        color: _isTyping ? Colors.grey : Colors.black54,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                    ),
-                    style: GoogleFonts.notoNaskhArabic(
-                      fontSize: 16,
-                      color: _isTyping ? Colors.grey : Colors.black87,
-                    ),
-                    maxLines: null,
-                    textDirection: TextDirection.rtl,
-                    onSubmitted: (_) => _sendMessage(),
+              if (_userProfile['city']?.isNotEmpty == true)
+                Text(
+                  _userProfile['city'],
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 14,
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: (_isAIConfigured && !_isTyping) ? _sendMessage : null,
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: (_isAIConfigured && !_isTyping)
-                      ? Colors.green 
-                      : Colors.grey.withOpacity(0.5),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: _isTyping
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.send_rounded,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+              Text(
+                'تناؤ: ${_userProfile['stressLevel'] ?? 5}/10',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
                 ),
               ),
             ],
           ),
-        ],
-      ),
+        ),
+        IconButton(
+          onPressed: _toggleProfilePanel,
+          icon: Icon(Icons.close, color: Colors.grey[600]),
+        ),
+      ],
     );
   }
 
-  String _formatTime(DateTime timestamp) {
-    final hour = timestamp.hour;
-    final minute = timestamp.minute.toString().padLeft(2, '0');
-    final isPM = hour >= 12;
-    final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
-    
-    return '$displayHour:$minute ${isPM ? 'PM' : 'AM'}';
-  }
-
-  // Keep all your existing drawer and dialog methods exactly the same
-  Widget _buildProfileDrawer() {
-    return Drawer(
-      backgroundColor: Colors.black.withOpacity(0.9),
-      child: Column(
-        children: [
-          Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 20,
-              left: 20,
-              right: 20,
-              bottom: 20,
+  Widget _buildProfileSection(String title, IconData icon, VoidCallback onTap, {Color? color}) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 15),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey[300]!),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Column(
+            child: Row(
               children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.greenAccent.withOpacity(0.8),
-                  backgroundImage: _profileImagePath.isNotEmpty
-                    ? FileImage(File(_profileImagePath))
-                    : null,
-                  child: _profileImagePath.isEmpty 
-                    ? Text(
-                        _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
-                        style: GoogleFonts.poppins(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      )
-                    : null,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _userName,
-                  style: GoogleFonts.notoNaskhArabic(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'آپ کا پیشہ ور AI تھراپسٹ',
-                  style: GoogleFonts.notoNaskhArabic(
-                    fontSize: 14,
-                    color: Colors.white.withOpacity(0.8),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _isAIConfigured ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isAIConfigured ? Colors.green : Colors.orange,
-                      width: 1,
-                    ),
-                  ),
+                Icon(icon, color: color ?? Color(0xFF2E7D63), size: 24),
+                SizedBox(width: 15),
+                Expanded(
                   child: Text(
-                    _isAIConfigured ? 'Professional Mode Active' : 'Basic Mode',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: _isAIConfigured ? Colors.green : Colors.orange,
-                      fontWeight: FontWeight.w600,
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: color ?? Colors.black87,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
+                Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
               ],
             ),
           ),
-          
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(0),
-              children: [
-                _buildDrawerItem(
-                  icon: Icons.person_outline,
-                  title: 'Edit Profile',
-                  titleUrdu: 'پروفائل تبدیل کریں',
-                  onTap: () => _showEditProfileDialog(),
-                ),
-                _buildDrawerItem(
-                  icon: Icons.mood,
-                  title: 'Mood Tracking',
-                  titleUrdu: 'موڈ کی نگرانی',
-                  onTap: () => _showMoodChart(),
-                ),
-                _buildDrawerItem(
-                  icon: Icons.history,
-                  title: 'Session History',
-                  titleUrdu: 'سیشن کی تاریخ',
-                  onTap: () => _showSessionHistory(),
-                ),
-                _buildDrawerItem(
-                  icon: Icons.info_outline,
-                  title: 'About Rastah',
-                  titleUrdu: 'رستہ کے بارے میں',
-                  onTap: () => _showAboutDialog(),
-                ),
-                _buildDrawerItem(
-                  icon: Icons.report_outlined,
-                  title: 'Report Issue',
-                  titleUrdu: 'مسئلہ کی رپورٹ',
-                  onTap: () => _reportIssue(),
-                ),
-                _buildDrawerItem(
-                  icon: Icons.delete_outline,
-                  title: 'Clear All Data',
-                  titleUrdu: 'تمام ڈیٹا صاف کریں',
-                  onTap: () => _showClearDataDialog(),
-                  isDestructive: true,
-                ),
-              ],
-            ),
-          ),
-          
-          Container(
-            padding: const EdgeInsets.all(20),
-            child: Text(
-              'رستہ - آپ کا ہمسفر\n${AIService.getModelInfo()}',
-              style: GoogleFonts.notoNaskhArabic(
-                fontSize: 12,
-                color: Colors.white.withOpacity(0.6),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildDrawerItem({
-    required IconData icon,
-    required String title,
-    required String titleUrdu,
-    required VoidCallback onTap,
-    bool isDestructive = false,
-  }) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: isDestructive ? Colors.redAccent : Colors.white,
-        size: 24,
+  void _showEditProfile() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => EditProfileSheet(
+        userProfile: _userProfile,
+        onSave: (updatedProfile) {
+          setState(() => _userProfile = updatedProfile);
+          AIService.updateUserProfile(updatedProfile);
+        },
       ),
-      title: Text(
-        titleUrdu,
-        style: GoogleFonts.notoNaskhArabic(
-          fontSize: 16,
-          color: isDestructive ? Colors.redAccent : Colors.white,
-        ),
-      ),
-      subtitle: Text(
-        title,
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          color: isDestructive 
-            ? Colors.redAccent.withOpacity(0.7) 
-            : Colors.white.withOpacity(0.6),
-        ),
-      ),
-      onTap: () {
-        Navigator.of(context).pop();
-        onTap();
-      },
     );
   }
 
-  // Add all your existing dialog methods (showModeMenu, showEditProfileDialog, etc.) here
-  // They remain exactly the same as in your original code
-
-  void _showModeMenu() {
+  void _showMoodTracker() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.9),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
+      builder: (context) => MoodTrackerSheet(
+        userProfile: _userProfile,
+        onUpdate: (mood, stress, lastCried) {
+          setState(() {
+            _userProfile['currentMood'] = mood;
+            _userProfile['stressLevel'] = stress;
+            if (lastCried != null) _userProfile['lastCried'] = lastCried.toIso8601String();
+          });
+          AIService.updateUserMood(mood, stress, lastCried: lastCried);
+        },
+      ),
+    );
+  }
+
+  void _showPastConversations() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => PastConversationsSheet(summaries: _conversationSummaries),
+    );
+  }
+
+  void _startNewChat() async {
+    // Save current conversation summary if it has enough messages
+    if (_conversations.where((msg) => msg['role'] == 'user').length >= 4) {
+      final summary = await AIService.generateConversationSummary(_conversations);
+      if (summary.isNotEmpty) {
+        await AIService.saveConversationSummary(summary);
+      }
+    }
+    
+    setState(() {
+      _conversations.clear();
+    });
+    
+    await AIService.clearCurrentConversation();
+    _loadData();
+    _toggleProfilePanel();
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('نئی گفتگو شروع کی گئی')),
+    );
+  }
+
+  void _showMoodLogs() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => MoodLogsSheet(moodLogs: _moodLogs),
+    );
+  }
+
+  void _showAboutRastah() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AboutRastahSheet(),
+    );
+  }
+
+  void _showAboutDeveloper() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AboutDeveloperSheet(),
+    );
+  }
+
+  void _showClearDataDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text('تمام ڈیٹا صاف کریں؟'),
+        content: Text('کیا آپ واقعی تمام ڈیٹا حذف کرنا چاہتے ہیں؟ یہ عمل واپس نہیں ہو سکتا۔'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('منسوخ', style: TextStyle(color: Colors.grey[600])),
           ),
-        ),
+          ElevatedButton(
+            onPressed: () async {
+              await AIService.clearAllData();
+              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('حذف کریں', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      body: Stack(
+        children: [
+          // Background
+          Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/chat.png'),
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withOpacity(0.7),
+                  BlendMode.darken,
+                ),
+              ),
+            ),
+          ),
+          
+          // Main content
+          Column(
+            children: [
+              // App bar
+              SafeArea(
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.95),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      // Logo/Title
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Color(0xFF2E7D63),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(Icons.psychology, color: Colors.white),
+                            ),
+                            SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'راستہ',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF2E7D63),
+                                  ),
+                                ),
+                                Text(
+                                  AIService.getAvailableModes()[_currentMode]!['name']!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      // Mode selector
+                      InkWell(
+                        onTap: _showModeSelector,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF2E7D63).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Color(0xFF2E7D63).withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                AIService.getAvailableModes()[_currentMode]!['emoji']!,
+                                style: TextStyle(fontSize: 16),
+                              ),
+                              SizedBox(width: 5),
+                              Icon(Icons.keyboard_arrow_down, color: Color(0xFF2E7D63), size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                      SizedBox(width: 10),
+                      
+                      // Profile button
+                      InkWell(
+                        onTap: _toggleProfilePanel,
+                        borderRadius: BorderRadius.circular(20),
+                        child: CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Colors.grey[300],
+                          backgroundImage: _userProfile['profilePic']?.isNotEmpty == true 
+                              ? FileImage(File(_userProfile['profilePic'])) 
+                              : null,
+                          child: _userProfile['profilePic']?.isEmpty != false 
+                              ? Icon(Icons.person, color: Colors.grey[600], size: 20) 
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Chat messages
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  itemCount: _conversations.length + (_isTyping ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (index == _conversations.length && _isTyping) {
+                      return _buildTypingIndicator();
+                    }
+                    return _buildChatBubble(_conversations[index], index);
+                  },
+                ),
+              ),
+              
+              // Input area
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.95),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  child: Row(
+                    children: [
+                      // Voice input button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: _isListening ? Colors.red : Color(0xFF2E7D63),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          onPressed: _startListening,
+                          icon: Icon(
+                            _isListening ? Icons.mic_off : Icons.mic,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      
+                      SizedBox(width: 12),
+                      
+                      // Text input
+                      Expanded(
+  child: Container(
+    decoration: BoxDecoration(
+      color: Colors.grey[100],
+      borderRadius: BorderRadius.circular(25),
+      border: Border.all(color: Colors.grey[300]!),
+    ),
+    child: TextField(
+      controller: _messageController,
+      decoration: InputDecoration(
+        hintText: 'یہاں لکھیں...',
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      ),
+      maxLines: null,
+      textDirection: TextDirection.rtl,  // ✅ Changed from LTR to rtl (for Urdu text)
+      onSubmitted: (_) => _sendMessage(),
+    ),
+  ),
+),
+                      
+                      SizedBox(width: 12),
+                      
+                      // Send button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Color(0xFF2E7D63),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          onPressed: _sendMessage,
+                          icon: Icon(Icons.send, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          
+          // Profile panel overlay
+          if (_showProfilePanel) ...[
+            // Background overlay
+            GestureDetector(
+              onTap: _toggleProfilePanel,
+              child: Container(
+                color: Colors.black54,
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            ),
+            
+            // Profile panel
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: _buildProfilePanel(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// Additional widget classes for modular components
+
+class EditProfileSheet extends StatefulWidget {
+  final Map<String, dynamic> userProfile;
+  final Function(Map<String, dynamic>) onSave;
+
+  EditProfileSheet({required this.userProfile, required this.onSave});
+
+  @override
+  _EditProfileSheetState createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<EditProfileSheet> {
+  late TextEditingController _nameController;
+  late TextEditingController _ageController;
+  late TextEditingController _cityController;
+  String? _profilePicPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.userProfile['name'] ?? '');
+    _ageController = TextEditingController(
+      text: widget.userProfile['age']?.toString() ?? '',
+    );
+    _cityController = TextEditingController(text: widget.userProfile['city'] ?? '');
+    _profilePicPath = widget.userProfile['profilePic'];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(20),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(2),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-            const SizedBox(height: 20),
-            
+            SizedBox(height: 20),
             Text(
-              'موڈ منتخب کریں',
-              style: GoogleFonts.notoNaskhArabic(
-                fontSize: 18,
+              'تفصیلات تبدیل کریں',
+              style: TextStyle(
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: Color(0xFF2E7D63),
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 30),
             
-            // Therapy Mode
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.3),
-                  shape: BoxShape.circle,
+            // Profile picture
+            Center(
+              child: GestureDetector(
+                onTap: _pickProfilePicture,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.grey[300],
+                      backgroundImage: _profilePicPath?.isNotEmpty == true 
+                          ? FileImage(File(_profilePicPath!)) 
+                          : null,
+                      child: _profilePicPath?.isEmpty != false 
+                          ? Icon(Icons.person, size: 50, color: Colors.grey[600]) 
+                          : null,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Color(0xFF2E7D63),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.psychology, color: Colors.green),
               ),
-              title: Text(
-                'Therapy Mode',
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                'تفصیلی اور گہری تھراپی - زیادہ وقت، بہتر سمجھ',
-                style: GoogleFonts.notoNaskhArabic(
-                  color: Colors.white.withOpacity(0.7),
-                  fontSize: 12,
-                ),
-              ),
-              trailing: _isTherapyMode 
-                ? const Icon(Icons.check_circle, color: Colors.green)
-                : null,
-              onTap: () {
-                if (!_isTherapyMode) {
-                  Navigator.of(context).pop();
-                  _toggleTherapyMode();
-                } else {
-                  Navigator.of(context).pop();
-                }
-              },
             ),
             
-            const Divider(color: Colors.white24),
+            SizedBox(height: 30),
             
-            // Quick Mode
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.3),
-                  shape: BoxShape.circle,
+            // Form fields
+            _buildTextField('نام', _nameController, Icons.person),
+            SizedBox(height: 20),
+            _buildTextField('عمر', _ageController, Icons.calendar_today, isNumber: true),
+            SizedBox(height: 20),
+            _buildTextField('شہر', _cityController, Icons.location_city),
+            
+            Spacer(),
+            
+            // Save button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saveProfile,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF2E7D63),
+                  padding: EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-                child: const Icon(Icons.quiz, color: Colors.blue),
-              ),
-              title: Text(
-                'Quick Q&A Mode',
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                'فوری اور مختصر جوابات - تیز مدد کے لیے',
-                style: GoogleFonts.notoNaskhArabic(
-                  color: Colors.white.withOpacity(0.7),
-                  fontSize: 12,
+                child: Text(
+                  'محفوظ کریں',
+                  style: TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ),
-              trailing: !_isTherapyMode 
-                ? const Icon(Icons.check_circle, color: Colors.blue)
-                : null,
-              onTap: () {
-                if (_isTherapyMode) {
-                  Navigator.of(context).pop();
-                  _toggleTherapyMode();
-                } else {
-                  Navigator.of(context).pop();
-                }
-              },
             ),
           ],
         ),
@@ -1342,664 +1099,620 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // Add all other dialog methods exactly as they were in your original code
-  // _showEditProfileDialog(), _showMoodChart(), _showSessionHistory(), 
-  // _showAboutDialog(), _reportIssue(), _showClearDataDialog(), _checkFirstTimeUser()
-
-  void _checkFirstTimeUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final hasShownWelcome = prefs.getBool('first_time_welcome_shown') ?? false;
-    
-    if (!hasShownWelcome) {
-      await Future.delayed(const Duration(milliseconds: 1000));
-      _showFirstTimeWelcome();
-    }
-  }
-
-  void _showFirstTimeWelcome() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'رستہ میں خوش آمدید! 🎉',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        content: Text(
-          'میں آپ کا پیشہ ور AI تھراپسٹ ہوں۔ آپ سے کھل کر بات کر سکتے ہیں۔ میں آپ کا موڈ ٹریک کروں گا اور مکمل طور پر محفوظ ہوں۔',
-          style: GoogleFonts.notoNaskhArabic(
+  Widget _buildTextField(String label, TextEditingController controller, IconData icon, 
+      {bool isNumber = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
             fontSize: 16,
-            color: Colors.white,
-            height: 1.5,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[700],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('first_time_welcome_shown', true);
-              Navigator.of(context).pop();
-            },
-            child: Text(
-              'چلیں شروع کرتے ہیں! 🚀',
-              style: GoogleFonts.notoNaskhArabic(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
+        SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon, color: Color(0xFF2E7D63)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Color(0xFF2E7D63)),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  void _showEditProfileDialog() async {
-    final nameController = TextEditingController(text: _userName);
-    final prefs = await SharedPreferences.getInstance();
-    int currentAge = prefs.getInt('age') ?? 20;
-    int currentStressLevel = prefs.getInt('stress_level') ?? 5;
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'پروفائل تبدیل کریں',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        content: StatefulBuilder(
-          builder: (context, setDialogState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: 'آپ کا نام',
-                  labelStyle: GoogleFonts.notoNaskhArabic(color: Colors.white),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.5)),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.greenAccent),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                style: GoogleFonts.notoNaskhArabic(color: Colors.white),
-                textDirection: TextDirection.rtl,
-              ),
-              const SizedBox(height: 16),
-              
-              Text(
-                'عمر: $currentAge سال',
-                style: GoogleFonts.notoNaskhArabic(color: Colors.white, fontSize: 16),
-              ),
-              Slider(
-                value: currentAge.toDouble(),
-                min: 15,
-                max: 40,
-                divisions: 25,
-                activeColor: Colors.greenAccent,
-                inactiveColor: Colors.white.withOpacity(0.3),
-                onChanged: (value) {
-                  setDialogState(() {
-                    currentAge = value.round();
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              Text(
-                'تناؤ کی سطح: $currentStressLevel/10',
-                style: GoogleFonts.notoNaskhArabic(color: Colors.white, fontSize: 16),
-              ),
-              Slider(
-                value: currentStressLevel.toDouble(),
-                min: 1,
-                max: 10,
-                divisions: 9,
-                activeColor: currentStressLevel <= 3 
-                  ? Colors.green 
-                  : currentStressLevel <= 6 
-                    ? Colors.orange 
-                    : Colors.red,
-                inactiveColor: Colors.white.withOpacity(0.3),
-                onChanged: (value) {
-                  setDialogState(() {
-                    currentStressLevel = value.round();
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              GestureDetector(
-                onTap: () async {
-                  final ImagePicker picker = ImagePicker();
-                  final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-                  if (image != null) {
-                    setState(() {
-                      _profileImagePath = image.path;
-                    });
-                    await prefs.setString('profile_image', image.path);
-                  }
-                },
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.greenAccent.withOpacity(0.3),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.greenAccent, width: 2),
-                  ),
-                  child: _profileImagePath.isNotEmpty
-                    ? ClipOval(
-                        child: Image.file(
-                          File(_profileImagePath),
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.add_a_photo,
-                        color: Colors.greenAccent,
-                        size: 30,
-                      ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'منسوخ کریں',
-              style: GoogleFonts.notoNaskhArabic(color: Colors.white),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              await prefs.setString('name', nameController.text.trim());
-              await prefs.setInt('age', currentAge);
-              await prefs.setInt('stress_level', currentStressLevel);
-              
-              setState(() {
-                _userName = nameController.text.trim().isNotEmpty 
-                  ? nameController.text.trim() 
-                  : 'دوست';
-              });
-              
-              Navigator.of(context).pop();
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'پروفائل اپ ڈیٹ ہو گئی',
-                    style: GoogleFonts.notoNaskhArabic(color: Colors.white),
-                  ),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: Text(
-              'محفوظ کریں',
-              style: GoogleFonts.notoNaskhArabic(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showMoodChart() async {
-    final moodData = await AIService.getMoodHistory();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'موڈ ٹریکنگ - پچھلے 30 دن',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        content: Container(
-          width: double.maxFinite,
-          height: 400,
-          child: moodData.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.mood,
-                      size: 64,
-                      color: Colors.white.withOpacity(0.5),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'ابھی تک کوئی موڈ ڈیٹا نہیں ہے',
-                      style: GoogleFonts.notoNaskhArabic(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'آج کا موڈ شامل کریں:',
-                      style: GoogleFonts.notoNaskhArabic(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      children: [
-                        {'emoji': '😰', 'score': 2, 'label': 'پریشان'},
-                        {'emoji': '😔', 'score': 4, 'label': 'اداس'},
-                        {'emoji': '😐', 'score': 5, 'label': 'عام'},
-                        {'emoji': '😊', 'score': 7, 'label': 'خوش'},
-                        {'emoji': '😄', 'score': 9, 'label': 'بہت خوش'},
-                      ].map((mood) => GestureDetector(
-                        onTap: () async {
-                          await AIService.updateUserMood(
-                            mood['emoji'] as String,
-                            mood['score'] as int,
-                          );
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'موڈ محفوظ ہو گیا: ${mood['emoji']}',
-                                style: GoogleFonts.notoNaskhArabic(color: Colors.white),
-                              ),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            children: [
-                              Text(mood['emoji'] as String, style: const TextStyle(fontSize: 24)),
-                              const SizedBox(height: 4),
-                              Text(
-                                mood['label'] as String,
-                                style: GoogleFonts.notoNaskhArabic(
-                                  fontSize: 10,
-                                  color: Colors.white.withOpacity(0.8),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )).toList(),
-                    ),
-                  ],
-                ),
-              )
-            : ListView.builder(
-                itemCount: moodData.length,
-                itemBuilder: (context, index) {
-                  final entries = moodData.entries.toList()
-                    ..sort((a, b) => b.key.compareTo(a.key));
-                  
-                  if (index >= entries.length) return const SizedBox();
-                  
-                  final entry = entries[index];
-                  final date = DateTime.parse(entry.key);
-                  final mood = entry.value;
-                  
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(mood['emoji'], style: const TextStyle(fontSize: 24)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${date.day}/${date.month}/${date.year}',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'اسکور: ${mood['score']}/10',
-                                style: GoogleFonts.notoNaskhArabic(
-                                  color: Colors.white.withOpacity(0.7),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'ٹھیک ہے',
-              style: GoogleFonts.notoNaskhArabic(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSessionHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    final chatHistory = prefs.getString('chat_history');
-    final sessions = <Map<String, String>>[];
-    
-    if (chatHistory != null) {
-      final List<dynamic> messages = json.decode(chatHistory);
-      final messagesByDate = <String, List<dynamic>>{};
-      
-      for (final message in messages) {
-        final timestamp = DateTime.parse(message['timestamp']);
-        final dateKey = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')}';
-        
-        if (!messagesByDate.containsKey(dateKey)) {
-          messagesByDate[dateKey] = [];
-        }
-        messagesByDate[dateKey]!.add(message);
-      }
-      
-      messagesByDate.forEach((date, dayMessages) {
-        final userMessages = dayMessages.where((msg) => msg['isUser'] == true).toList();
-        if (userMessages.isNotEmpty) {
-          final firstMessage = userMessages.first['text'] as String;
-          final summary = firstMessage.length > 50 
-            ? '${firstMessage.substring(0, 50)}...'
-            : firstMessage;
-          
-          sessions.add({
-            'date': date,
-            'summary': summary,
-            'messageCount': userMessages.length.toString(),
-          });
-        }
-      });
-    }
-    
-    sessions.sort((a, b) => b['date']!.compareTo(a['date']!));
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'سیشن کی تاریخ',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        content: Container(
-          width: double.maxFinite,
-          height: 400,
-          child: sessions.isEmpty
-            ? Center(
-                child: Text(
-                  'ابھی تک کوئی سیشن نہیں ہے',
-                  style: GoogleFonts.notoNaskhArabic(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 16,
-                  ),
-                ),
-              )
-            : ListView.builder(
-                itemCount: sessions.length,
-                itemBuilder: (context, index) {
-                  final session = sessions[index];
-                  final date = DateTime.parse(session['date']!);
-                  final formattedDate = '${date.day}/${date.month}/${date.year}';
-                  
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              formattedDate,
-                              style: GoogleFonts.poppins(
-                                color: Colors.greenAccent,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                            Text(
-                              '${session['messageCount']} پیغامات',
-                              style: GoogleFonts.notoNaskhArabic(
-                                color: Colors.white.withOpacity(0.6),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          session['summary']!,
-                          style: GoogleFonts.notoNaskhArabic(
-                            color: Colors.white,
-                            fontSize: 14,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'ٹھیک ہے',
-              style: GoogleFonts.notoNaskhArabic(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAboutDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'رستہ کے بارے میں',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        content: SingleChildScrollView(
-          child: Text(
-            'رستہ پاکستانی طلباء کے لیے خصوصی طور پر ڈیزائن کیا گیا پیشہ ور AI تھراپسٹ ہے۔ یہ آپ کو جذباتی سپورٹ فراہم کرتا ہے اور cultural context کو سمجھتے ہوئے آپ کی مدد کرتا ہے۔',
-            style: GoogleFonts.notoNaskhArabic(
-              fontSize: 16,
-              color: Colors.white,
-              height: 1.5,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'ٹھیک ہے',
-              style: GoogleFonts.notoNaskhArabic(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _reportIssue() async {
-    const email = 'saadnizami114@gmail.com';
-    final subject = 'Rastah App - Professional Support';
-    final body = 'Describe your issue or feedback for professional improvement...';
-    
-    final Uri emailUri = Uri(
-      scheme: 'mailto',
-      path: email,
-      query: 'subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(body)}',
-    );
-    
+  void _pickProfilePicture() async {
     try {
-      if (await canLaunchUrl(emailUri)) {
-        await launchUrl(emailUri);
-      } else {
-        Clipboard.setData(const ClipboardData(text: email));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Email copied: $email',
-              style: GoogleFonts.poppins(color: Colors.white),
-            ),
-            backgroundColor: Colors.blue,
-          ),
-        );
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      
+      if (image != null) {
+        setState(() {
+          _profilePicPath = image.path;
+        });
       }
     } catch (e) {
-      Clipboard.setData(const ClipboardData(text: email));
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Email copied: $email',
-            style: GoogleFonts.poppins(color: Colors.white),
-          ),
-          backgroundColor: Colors.blue,
-        ),
+        SnackBar(content: Text('تصویر منتخب کرنے میں خرابی ہوئی')),
       );
     }
   }
 
-  void _showClearDataDialog() {
-    showDialog(
+  void _saveProfile() {
+    final updatedProfile = Map<String, dynamic>.from(widget.userProfile);
+    updatedProfile['name'] = _nameController.text.trim();
+    updatedProfile['city'] = _cityController.text.trim();
+    updatedProfile['profilePic'] = _profilePicPath ?? '';
+    
+    if (_ageController.text.trim().isNotEmpty) {
+      updatedProfile['age'] = int.tryParse(_ageController.text.trim());
+    }
+    
+    widget.onSave(updatedProfile);
+    Navigator.pop(context);
+  }
+}
+
+class MoodTrackerSheet extends StatefulWidget {
+  final Map<String, dynamic> userProfile;
+  final Function(String, int, DateTime?) onUpdate;
+
+  MoodTrackerSheet({required this.userProfile, required this.onUpdate});
+
+  @override
+  _MoodTrackerSheetState createState() => _MoodTrackerSheetState();
+}
+
+class _MoodTrackerSheetState extends State<MoodTrackerSheet> {
+  String _selectedMood = '😐';
+  int _stressLevel = 5;
+  DateTime? _lastCried;
+
+  final List<String> _moods = ['😄', '😊', '😐', '😔', '😠', '😰', '😴'];
+  final Map<String, String> _moodLabels = {
+    '😄': 'بہت خوش',
+    '😊': 'خوش',
+    '😐': 'عام',
+    '😔': 'اداس',
+    '😠': 'ناراض',
+    '😰': 'پریشان',
+    '😴': 'تھکا ہوا',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMood = widget.userProfile['currentMood'] ?? '😐';
+    _stressLevel = widget.userProfile['stressLevel'] ?? 5;
+    
+    if (widget.userProfile['lastCried'] != null) {
+      try {
+        _lastCried = DateTime.parse(widget.userProfile['lastCried']);
+      } catch (e) {
+        _lastCried = null;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            SizedBox(height: 20),
+            Text(
+              'آپ کا موڈ کیسا ہے؟',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2E7D63),
+              ),
+            ),
+            SizedBox(height: 30),
+            
+            // Mood selector
+            Text(
+              'موجودہ موڈ',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            SizedBox(height: 15),
+            Wrap(
+              spacing: 15,
+              runSpacing: 15,
+              children: _moods.map((mood) => GestureDetector(
+                onTap: () => setState(() => _selectedMood = mood),
+                child: Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _selectedMood == mood 
+                        ? Color(0xFF2E7D63).withOpacity(0.1) 
+                        : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _selectedMood == mood 
+                          ? Color(0xFF2E7D63) 
+                          : Colors.grey[300]!,
+                      width: _selectedMood == mood ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(mood, style: TextStyle(fontSize: 30)),
+                      SizedBox(height: 5),
+                      Text(
+                        _moodLabels[mood]!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _selectedMood == mood 
+                              ? Color(0xFF2E7D63) 
+                              : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )).toList(),
+            ),
+            
+            SizedBox(height: 30),
+            
+            // Stress level
+            Text(
+              'تناؤ کی سطح: $_stressLevel/10',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            SizedBox(height: 15),
+            Slider(
+              value: _stressLevel.toDouble(),
+              min: 1,
+              max: 10,
+              divisions: 9,
+              activeColor: Color(0xFF2E7D63),
+              onChanged: (value) => setState(() => _stressLevel = value.round()),
+            ),
+            
+            SizedBox(height: 30),
+            
+            // Last cried
+            Text(
+              'آخری بار کب روئے؟',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            SizedBox(height: 15),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _lastCried != null 
+                        ? DateFormat('dd/MM/yyyy').format(_lastCried!)
+                        : 'کوئی ریکارڈ نہیں',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _selectLastCriedDate,
+                  child: Text('تبدیل کریں'),
+                ),
+              ],
+            ),
+            
+            Spacer(),
+            
+            // Save button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  widget.onUpdate(_selectedMood, _stressLevel, _lastCried);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF2E7D63),
+                  padding: EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(
+                  'محفوظ کریں',
+                  style: TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectLastCriedDate() async {
+    final DateTime? picked = await showDatePicker(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'تمام ڈیٹا صاف کریں',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        content: Text(
-          'یہ تمام چیٹ ہسٹری، موڈ ڈیٹا اور سیٹنگز کو صاف کر دے گا۔ یہ عمل واپس نہیں ہو سکتا۔',
-          style: GoogleFonts.notoNaskhArabic(
-            fontSize: 14,
-            color: Colors.white,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'منسوخ کریں',
-              style: GoogleFonts.notoNaskhArabic(color: Colors.white),
+      initialDate: _lastCried ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    
+    if (picked != null) {
+      setState(() => _lastCried = picked);
+    }
+  }
+}
+
+class PastConversationsSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> summaries;
+
+  PastConversationsSheet({required this.summaries});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                SizedBox(height: 20),
+                Text(
+                  'پچھلی گفتگو',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E7D63),
+                  ),
+                ),
+              ],
             ),
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.clear();
-              
-              setState(() {
-                _messages.clear();
-                _conversationHistory.clear();
-                _userName = 'دوست';
-                _profileImagePath = '';
-                _messageCount = 0;
-              });
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'تمام ڈیٹا صاف کر دیا گیا',
-                    style: GoogleFonts.notoNaskhArabic(color: Colors.white),
+          Expanded(
+            child: summaries.isEmpty 
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
+                        SizedBox(height: 20),
+                        Text(
+                          'ابھی تک کوئی گفتگو محفوظ نہیں ہوئی',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: summaries.length,
+                    itemBuilder: (context, index) {
+                      final summary = summaries[index];
+                      return Container(
+                        margin: EdgeInsets.only(bottom: 15),
+                        padding: EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.chat, color: Color(0xFF2E7D63), size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  summary['day'] ?? '',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF2E7D63),
+                                  ),
+                                ),
+                                Spacer(),
+                                Text(
+                                  summary['time'] ?? '',
+                                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              summary['summary'] ?? '',
+                              style: TextStyle(fontSize: 14, height: 1.4),
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              summary['date'] ?? '',
+                              style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  backgroundColor: Colors.green,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class MoodLogsSheet extends StatelessWidget {
+  final Map<String, dynamic> moodLogs;
+
+  MoodLogsSheet({required this.moodLogs});
+
+  @override
+  Widget build(BuildContext context) {
+    final sortedLogs = moodLogs.entries.toList()
+      ..sort((a, b) => b.key.compareTo(a.key));
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              );
-            },
-            child: Text(
-              'صاف کریں',
-              style: GoogleFonts.notoNaskhArabic(
-                color: Colors.redAccent,
-                fontWeight: FontWeight.w600,
+                SizedBox(height: 20),
+                Text(
+                  'موڈ کی تاریخ',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E7D63),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: sortedLogs.isEmpty 
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.timeline, size: 80, color: Colors.grey[300]),
+                        SizedBox(height: 20),
+                        Text(
+                          'ابھی تک کوئی موڈ ریکارڈ نہیں ہوا',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: sortedLogs.length,
+                    itemBuilder: (context, index) {
+                      final entry = sortedLogs[index];
+                      final date = entry.key;
+                      final log = entry.value;
+                      
+                      return Container(
+                        margin: EdgeInsets.only(bottom: 12),
+                        padding: EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              log['mood'] ?? '😐',
+                              style: TextStyle(fontSize: 30),
+                            ),
+                            SizedBox(width: 15),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    date,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF2E7D63),
+                                    ),
+                                  ),
+                                  Text(
+                                    'تناؤ: ${log['stressLevel']}/10',
+                                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                  ),
+                                  if (log['keywords'] != null && log['keywords'].isNotEmpty)
+                                    Text(
+                                      log['keywords'].join(', '),
+                                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              width: 40,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: _getStressColor(log['stressLevel'] ?? 5),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getStressColor(int stressLevel) {
+    if (stressLevel <= 3) return Colors.green;
+    if (stressLevel <= 6) return Colors.orange;
+    return Colors.red;
+  }
+}
+
+class AboutRastahSheet extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
+            ),
+            SizedBox(height: 20),
+            Center(
+              child: Column(
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Color(0xFF2E7D63),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Icon(Icons.psychology, color: Colors.white, size: 40),
+                  ),
+                  SizedBox(height: 15),
+                  Text(
+                    'راستہ',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2E7D63),
+                    ),
+                  ),
+                  Text(
+                    'ذہنی صحت کا معاون',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 30),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSection(
+                      'راستہ کیا ہے؟',
+                      'راستہ ایک AI پر مبنی ذہنی صحت کا معاون ہے جو آپ کو مشکل وقت میں سہارا دیتا ہے۔ یہ مختلف انداز میں بات کر سکتا ہے - دوست کی طرح، تھراپسٹ کی طرح، یا بزرگ کی طرح۔'
+                    ),
+                    _buildSection(
+                      'رازداری کی پالیسی',
+                      '• آپ کی گفتگو آپ کے فون میں محفوظ ہے\n• ہم آپ کا ڈیٹا کسی کے ساتھ شیئر نہیں کرتے\n• آپ جب چاہیں اپنا ڈیٹا حذف کر سکتے ہیں\n• صرف OpenAI کی API استعمال ہوتی ہے جوابات کے لیے'
+                    ),
+                    _buildSection(
+                      'اہم نوٹ',
+                      '• یہ پیشہ ورانہ علاج کا متبادل نہیں ہے\n• ہنگامی حالات میں فوری طور پر ڈاکٹر سے رابطہ کریں\n• یہ صرف ابتدائی مدد کے لیے ہے\n• ہم کسی نقصان کے ذمہ دار نہیں ہیں'
+                    ),
+                    _buildSection(
+                      'تکنیکیں',
+                      'راستہ آپ کو یہ تکنیکیں سکھاتا ہے:\n• Pomodoro Technique - بہتر توجہ کے لیے\n• Deep Breathing - تناؤ کم کرنے کے لیے\n• Self-talk Reframes - مثبت سوچ کے لیے\n• Impulse Control - غصے پر قابو کے لیے'
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSection(String title, String content) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2E7D63),
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            content,
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.5,
+              color: Colors.grey[700],
             ),
           ),
         ],
@@ -2008,34 +1721,125 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 }
 
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
-  final bool? isSystemMessage;
-
-  ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-    this.isSystemMessage = false,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'text': text,
-      'isUser': isUser,
-      'timestamp': timestamp.toIso8601String(),
-      'isSystemMessage': isSystemMessage ?? false,
-    };
+class AboutDeveloperSheet extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            SizedBox(height: 20),
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: Color(0xFF2E7D63),
+              child: Text(
+                'SN',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            SizedBox(height: 20),
+            Text(
+              'Saad Nizami',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2E7D63),
+              ),
+            ),
+            Text(
+              '18 سال، لاہور سے',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+            SizedBox(height: 30),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    Text(
+                      'میں نے دیکھا ہے کہ پاکستان میں ذہنی صحت کو بہت نادیدہ کیا جاتا ہے۔ لوگ ڈپریشن، تناؤ، اور دوسرے ذہنی مسائل سے خاموشی سے لڑتے ہیں۔ میں نے راستہ بنایا تاکہ میرے ہم وطنوں کو ابتدائی مدد مل سکے۔\n\nیہ پیشہ ورانہ علاج کا متبادل نہیں ہے، لیکن یہ آپ کو بہتر محسوس کرانے میں مدد کر سکتا ہے۔',
+                      style: TextStyle(
+                        fontSize: 16,
+                        height: 1.6,
+                        color: Colors.grey[700],
+                    
+                      ),
+                    ),
+                    SizedBox(height: 30),
+                    Text(
+                      'رابطہ کریں',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2E7D63),
+                      ),
+                    ),
+                    SizedBox(height: 20),
+                    _buildContactButton(
+                      'GitHub',
+                      Icons.code,
+                      'https://github.com/saadnizami',
+                    ),
+                    _buildContactButton(
+                      'LinkedIn',
+                      Icons.business,
+                      'https://linkedin.com/in/saadnizami',
+                    ),
+                    _buildContactButton(
+                      'Email',
+                      Icons.email,
+                      'mailto:saadnizami.dev@gmail.com',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    return ChatMessage(
-      text: json['text'],
-      isUser: json['isUser'],
-      timestamp: DateTime.parse(json['timestamp']),
-      isSystemMessage: json['isSystemMessage'] ?? false,
+  Widget _buildContactButton(String title, IconData icon, String url) {
+    return Container(
+      width: double.infinity,
+      margin: EdgeInsets.only(bottom: 12),
+      child: ElevatedButton.icon(
+        onPressed: () => _launchURL(url),
+        icon: Icon(icon),
+        label: Text(title),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Color(0xFF2E7D63),
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.symmetric(vertical: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
     );
+  }
+
+  void _launchURL(String url) async {
+    if (await canLaunch(url)) {
+      await launch(url);
+    }
   }
 }

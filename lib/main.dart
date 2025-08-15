@@ -39,7 +39,7 @@ class RastahApp extends StatelessWidget {
       // Chat screen
       GoRoute(
         path: '/chat',
-        builder: (context, state) => const ChatScreen(),
+        builder: (context, state) => ChatScreen(),
       ),
     ],
   );
