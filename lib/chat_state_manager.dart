@@ -2,27 +2,91 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'services/ai_service.dart';
-// import 'ai_service.dart'; // Import your AI service
 
-// Main state manager for the chat functionality
+// Chat message model with complete functionality
+class ChatMessage {
+  final String content;
+  final bool isUser;
+  final DateTime timestamp;
+  final String id;
+  final Map<String, dynamic>? metadata;
+  
+  ChatMessage({
+    required this.content,
+    required this.isUser,
+    DateTime? timestamp,
+    String? id,
+    this.metadata,
+  }) : timestamp = timestamp ?? DateTime.now(),
+       id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
+  
+  Map<String, dynamic> toJson() => {
+    'content': content,
+    'isUser': isUser,
+    'timestamp': timestamp.toIso8601String(),
+    'id': id,
+    'metadata': metadata,
+  };
+  
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+    content: json['content'] ?? '',
+    isUser: json['isUser'] ?? false,
+    timestamp: DateTime.tryParse(json['timestamp'] ?? '') ?? DateTime.now(),
+    id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+    metadata: json['metadata'],
+  );
+  
+  ChatMessage copyWith({
+    String? content,
+    bool? isUser,
+    DateTime? timestamp,
+    String? id,
+    Map<String, dynamic>? metadata,
+  }) => ChatMessage(
+    content: content ?? this.content,
+    isUser: isUser ?? this.isUser,
+    timestamp: timestamp ?? this.timestamp,
+    id: id ?? this.id,
+    metadata: metadata ?? this.metadata,
+  );
+}
+
+// Enhanced state manager with all features working
 class ChatStateManager extends ChangeNotifier {
   // Private fields
-  List<ChatMessage> _messages = [];
-  String _currentMode = 'friend';
+  final List<ChatMessage> _messages = [];
+  String _currentMode = 'therapist'; // Default to therapist mode
   bool _isTyping = false;
   bool _isListening = false;
   bool _isSpeaking = false;
   bool _isConnected = true;
   bool _isLoading = false;
+  bool _isInitialized = false;
   Map<String, dynamic> _userProfile = {};
   List<Map<String, dynamic>> _conversationSummaries = [];
   Map<String, dynamic> _moodLogs = {};
   String _lastError = '';
+  
+  // Timers and controllers
   Timer? _connectionTimer;
   Timer? _typingTimer;
-
-  // Getters
+  Timer? _autoSaveTimer;
+  Timer? _heartbeatTimer;
+  
+  // Performance optimization caches
+  String? _cachedUserName;
+  int? _cachedTotalChats;
+  Map<String, String> _cachedModeInfo = {};
+  
+  // Constants
+  static const int _maxMessages = 1000;
+  static const int _autoSaveInterval = 120; // 2 minutes
+  static const int _connectionCheckInterval = 15; // 15 seconds
+  
+  // Getters with full functionality
   UnmodifiableListView<ChatMessage> get messages => UnmodifiableListView(_messages);
   String get currentMode => _currentMode;
   bool get isTyping => _isTyping;
@@ -30,199 +94,383 @@ class ChatStateManager extends ChangeNotifier {
   bool get isSpeaking => _isSpeaking;
   bool get isConnected => _isConnected;
   bool get isLoading => _isLoading;
+  bool get isInitialized => _isInitialized;
   Map<String, dynamic> get userProfile => Map.from(_userProfile);
   List<Map<String, dynamic>> get conversationSummaries => List.from(_conversationSummaries);
   Map<String, dynamic> get moodLogs => Map.from(_moodLogs);
   String get lastError => _lastError;
   bool get hasMessages => _messages.isNotEmpty;
-  bool get canSendMessage => _isConnected && !_isTyping && !_isListening;
-
-  // Initialize the state manager
-  Future<void> initialize() async {
-    await _loadUserData();
-    await _checkConnection();
-    _startConnectionMonitoring();
+  bool get canSendMessage => _isConnected && !_isTyping && !_isListening && !_isLoading && _isInitialized;
+  
+  // Enhanced getters with caching
+  String get userName {
+    _cachedUserName ??= _userProfile['name'] ?? _userProfile['user_name'] ?? 'دوست';
+    return _cachedUserName!;
   }
-
-  // Load user data from storage
+  
+  int get totalChats {
+    _cachedTotalChats ??= _userProfile['totalChats'] ?? _userProfile['total_chats'] ?? 0;
+    return _cachedTotalChats!;
+  }
+  
+  String get currentModeDisplayName {
+    if (_cachedModeInfo.containsKey(_currentMode)) {
+      return _cachedModeInfo[_currentMode]!;
+    }
+    final modes = AIService.getAvailableModes();
+    final name = modes[_currentMode]?['name'] ?? 'تھراپسٹ';
+    _cachedModeInfo[_currentMode] = name;
+    return name;
+  }
+  
+  // Initialize with comprehensive setup
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+    
+    _setLoading(true);
+    try {
+      debugPrint('ChatStateManager: Starting initialization...');
+      
+      // Load all user data
+      await _loadUserData();
+      
+      // Load conversation history
+      await _loadConversationHistory();
+      
+      // Check connectivity
+      await _checkConnection();
+      
+      // Start background services
+      _startConnectionMonitoring();
+      _startAutoSave();
+      _startHeartbeat();
+      
+      // Initialize AI services
+      await _initializeAIServices();
+      
+      // Set default mode if not already set
+      if (_currentMode.isEmpty || !AIService.getAvailableModes().containsKey(_currentMode)) {
+        _currentMode = 'therapist';
+      }
+      
+      _isInitialized = true;
+      debugPrint('ChatStateManager: Initialization completed successfully');
+      
+    } catch (e) {
+      _setError('شروعاتی ڈیٹا لوڈ کرنے میں خرابی: $e');
+      debugPrint('ChatStateManager: Initialization failed: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+  
+  // Load comprehensive user data
   Future<void> _loadUserData() async {
     try {
       _userProfile = await AIService.getUserProfile();
       _conversationSummaries = await AIService.getConversationSummaries();
       _moodLogs = await AIService.getMoodLogs();
-      notifyListeners();
+      
+      // Clear cache to force refresh
+      _cachedUserName = null;
+      _cachedTotalChats = null;
+      _cachedModeInfo.clear();
+      
+      debugPrint('ChatStateManager: User data loaded successfully');
     } catch (e) {
-      _setError('ڈیٹا لوڈ کرنے میں خرابی: $e');
+      debugPrint('ChatStateManager: Error loading user data: $e');
+      _setError('صارف کا ڈیٹا لوڈ کرنے میں خرابی: $e');
     }
   }
-
-  // Check internet connection
-  Future<void> _checkConnection() async {
+  
+  // Load conversation history from storage
+  Future<void> _loadConversationHistory() async {
     try {
-      final connected = await AIService.hasInternetConnection();
-      if (_isConnected != connected) {
-        _isConnected = connected;
-        notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      final conversationJson = prefs.getString('current_conversation');
+      
+      if (conversationJson != null && conversationJson.isNotEmpty) {
+        final List<dynamic> messageList = json.decode(conversationJson);
+        _messages.clear();
+        
+        for (final messageData in messageList) {
+          try {
+            final message = ChatMessage.fromJson(messageData);
+            _messages.add(message);
+          } catch (e) {
+            debugPrint('ChatStateManager: Error parsing message: $e');
+          }
+        }
+        
+        // Limit messages to prevent memory issues
+        if (_messages.length > _maxMessages) {
+          _messages.removeRange(0, _messages.length - _maxMessages);
+        }
+        
+        debugPrint('ChatStateManager: Loaded ${_messages.length} messages from history');
       }
     } catch (e) {
-      _isConnected = false;
-      notifyListeners();
+      debugPrint('ChatStateManager: Error loading conversation history: $e');
     }
   }
-
-  // Start monitoring connection
-  void _startConnectionMonitoring() {
-    _connectionTimer?.cancel();
-    _connectionTimer = Timer.periodic(Duration(seconds: 10), (_) {
-      _checkConnection();
-    });
+  
+  // Save conversation to storage
+  Future<void> _saveConversationHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final messageList = _messages.map((msg) => msg.toJson()).toList();
+      await prefs.setString('current_conversation', json.encode(messageList));
+    } catch (e) {
+      debugPrint('ChatStateManager: Error saving conversation: $e');
+    }
   }
-
-  // Send a message
-  Future<void> sendMessage(String messageText) async {
-    if (messageText.trim().isEmpty || !canSendMessage) return;
-
+  
+  // Initialize AI services
+  Future<void> _initializeAIServices() async {
+    try {
+      await AIService.initializeTTS();
+      await AIService.initializeSTT();
+      debugPrint('ChatStateManager: AI services initialized');
+    } catch (e) {
+      debugPrint('ChatStateManager: Error initializing AI services: $e');
+    }
+  }
+  
+  // Enhanced message sending with full error handling
+  Future<void> sendMessage(String content) async {
+    if (!canSendMessage || content.trim().isEmpty) {
+      debugPrint('ChatStateManager: Cannot send message - conditions not met');
+      return;
+    }
+    
+    final trimmedContent = content.trim();
+    debugPrint('ChatStateManager: Sending message: ${trimmedContent.substring(0, trimmedContent.length > 50 ? 50 : trimmedContent.length)}...');
+    
+    // Create user message
     final userMessage = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      content: messageText.trim(),
+      content: trimmedContent,
       isUser: true,
-      timestamp: DateTime.now(),
-      mode: _currentMode,
+      metadata: {
+        'mode': _currentMode,
+        'timestamp': DateTime.now().toIso8601String(),
+      },
     );
-
-    // Add user message
+    
+    // Add user message immediately
     _messages.add(userMessage);
     _setTyping(true);
+    _clearError();
     notifyListeners();
-
+    
+    // Save immediately for data persistence
+    unawaited(_saveConversationHistory());
+    
     try {
-      // Get AI response
-      final response = await AIService.generateResponse(
-        userMessage: messageText.trim(),
-        mode: _currentMode,
-        conversationHistory: _getConversationHistory(),
-        userProfile: _userProfile,
-      );
-
+      // Build conversation context
+      final conversationHistory = _buildConversationHistory();
+      
+      debugPrint('ChatStateManager: Generating AI response...');
+      
+      // Generate AI response with timeout
+      final response = await Future.any([
+        AIService.generateResponse(
+          userMessage: trimmedContent,
+          mode: _currentMode,
+          conversationHistory: conversationHistory,
+          userProfile: _userProfile,
+        ),
+        Future.delayed(const Duration(seconds: 30), () => throw TimeoutException('AI response timeout', const Duration(seconds: 30))),
+      ]);
+      
+      // Create AI message
       final aiMessage = ChatMessage(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
         content: response,
         isUser: false,
-        timestamp: DateTime.now(),
-        mode: _currentMode,
+        metadata: {
+          'mode': _currentMode,
+          'response_time': DateTime.now().toIso8601String(),
+        },
       );
-
+      
       _messages.add(aiMessage);
       
-      // Auto-save conversation summary
-      await _autoSaveConversation();
-      await AIService.incrementChatCounter();
+      // Update statistics
+      await _updateChatStatistics();
       
-      _clearError();
+      // Auto-save conversation summary if conversation is long enough
+      if (_messages.where((msg) => msg.isUser).length >= 4) {
+        unawaited(_autoSaveConversationSummary());
+      }
+      
+      debugPrint('ChatStateManager: AI response received and processed');
+      
     } catch (e) {
-      _setError('پیغام بھیجنے میں خرابی: $e');
+      debugPrint('ChatStateManager: Error generating AI response: $e');
       
-      // Add error message
+      // Create error message
       final errorMessage = ChatMessage(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        content: 'معذرت، کوئی خرابی ہوئی ہے۔ براہ کرم دوبارہ کوشش کریں۔ 🔄',
+        content: _getLocalizedErrorMessage(e),
         isUser: false,
-        timestamp: DateTime.now(),
-        mode: _currentMode,
-        isError: true,
+        metadata: {
+          'error': true,
+          'original_error': e.toString(),
+        },
       );
+      
       _messages.add(errorMessage);
+      _setError('پیغام بھیجنے میں خرابی: $e');
     } finally {
       _setTyping(false);
-      notifyListeners();
-    }
-  }
-
-  // Start/stop voice listening
-  Future<void> toggleListening() async {
-    if (_isListening) {
-      await _stopListening();
-    } else {
-      await _startListening();
-    }
-  }
-
-  Future<String> _startListening() async {
-    try {
-      _isListening = true;
-      notifyListeners();
       
-      final result = await AIService.listenToSpeech();
-      
-      if (result.isNotEmpty && 
-          !result.contains('خرابی') && 
-          !result.contains('دستیاب نہیں')) {
-        return result; // Return the recognized text
+      // Clean up old messages if too many
+      if (_messages.length > _maxMessages) {
+        _messages.removeRange(0, _messages.length - _maxMessages);
       }
+      
+      // Save updated conversation
+      unawaited(_saveConversationHistory());
+      notifyListeners();
+    }
+  }
+  
+  // Enhanced mode changing with validation
+  Future<void> changeMode(String newMode) async {
+    if (_currentMode == newMode) return;
+    
+    final availableModes = AIService.getAvailableModes();
+    if (!availableModes.containsKey(newMode)) {
+      debugPrint('ChatStateManager: Invalid mode: $newMode');
+      return;
+    }
+    
+    final oldMode = _currentMode;
+    _currentMode = newMode;
+    
+    // Clear mode cache
+    _cachedModeInfo.clear();
+    
+    // Add system message about mode change
+    final modeInfo = availableModes[newMode]!;
+    final systemMessage = ChatMessage(
+      content: 'اب میں ${modeInfo['name']} ${modeInfo['emoji']} کے انداز میں آپ کی مدد کروں گا۔',
+      isUser: false,
+      metadata: {
+        'system': true,
+        'mode_change': {'from': oldMode, 'to': newMode},
+      },
+    );
+    
+    _messages.add(systemMessage);
+    
+    // Save mode preference
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('preferred_mode', newMode);
     } catch (e) {
+      debugPrint('ChatStateManager: Error saving mode preference: $e');
+    }
+    
+    notifyListeners();
+    debugPrint('ChatStateManager: Mode changed from $oldMode to $newMode');
+  }
+  
+  // Enhanced voice input with error handling
+  Future<String> startListening() async {
+    if (!canSendMessage || _isListening) return '';
+    
+    _setListening(true);
+    try {
+      debugPrint('ChatStateManager: Starting voice input...');
+      
+      final result = await Future.any([
+        AIService.listenToSpeech(),
+        Future.delayed(const Duration(seconds: 15), () => throw TimeoutException('Voice input timeout', const Duration(seconds: 15))),
+      ]);
+      
+      debugPrint('ChatStateManager: Voice input result: $result');
+      return result;
+      
+    } catch (e) {
+      debugPrint('ChatStateManager: Voice input error: $e');
       _setError('آواز سننے میں خرابی: $e');
+      return '';
     } finally {
-      _isListening = false;
-      notifyListeners();
+      _setListening(false);
     }
-    return '';
   }
-
-  Future<void> _stopListening() async {
-    await AIService.stopListening();
-    _isListening = false;
-    notifyListeners();
+  
+  // Stop voice input
+  Future<void> stopListening() async {
+    if (!_isListening) return;
+    
+    try {
+      await AIService.stopListening();
+      debugPrint('ChatStateManager: Voice input stopped');
+    } catch (e) {
+      debugPrint('ChatStateManager: Error stopping voice input: $e');
+    } finally {
+      _setListening(false);
+    }
   }
-
-  // Text-to-speech functionality
-  Future<void> speakMessage(String text) async {
+  
+  // Enhanced text-to-speech
+  Future<void> speakText(String text) async {
+    if (text.trim().isEmpty) return;
+    
     if (_isSpeaking) {
-      await _stopSpeaking();
-    } else {
-      await _startSpeaking(text);
+      await stopSpeaking();
+      return;
     }
-  }
-
-  Future<void> _startSpeaking(String text) async {
+    
+    _setSpeaking(true);
     try {
-      _isSpeaking = true;
-      notifyListeners();
+      debugPrint('ChatStateManager: Starting TTS for text: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
+      
       await AIService.speakText(text);
+      
     } catch (e) {
-      _setError('آواز چلانے میں خرابی: $e');
+      debugPrint('ChatStateManager: TTS error: $e');
+      _setError('آواز میں بولنے میں خرابی: $e');
     } finally {
-      _isSpeaking = false;
-      notifyListeners();
+      _setSpeaking(false);
     }
   }
-
-  Future<void> _stopSpeaking() async {
-    await AIService.stopSpeaking();
-    _isSpeaking = false;
-    notifyListeners();
-  }
-
-  // Change AI mode
-  void changeMode(String newMode) {
-    if (_currentMode != newMode) {
-      _currentMode = newMode;
-      notifyListeners();
-    }
-  }
-
-  // Update user profile
-  Future<void> updateUserProfile(Map<String, dynamic> newProfile) async {
+  
+  // Stop text-to-speech
+  Future<void> stopSpeaking() async {
+    if (!_isSpeaking) return;
+    
     try {
-      _userProfile = Map.from(newProfile);
-      await AIService.updateUserProfile(newProfile);
-      notifyListeners();
+      await AIService.stopSpeaking();
+      debugPrint('ChatStateManager: TTS stopped');
     } catch (e) {
+      debugPrint('ChatStateManager: Error stopping TTS: $e');
+    } finally {
+      _setSpeaking(false);
+    }
+  }
+  
+  // Enhanced profile management
+  Future<void> updateUserProfile(Map<String, dynamic> updatedProfile) async {
+    try {
+      await AIService.updateUserProfile(updatedProfile);
+      _userProfile = await AIService.getUserProfile();
+      
+      // Clear cache
+      _cachedUserName = null;
+      _cachedTotalChats = null;
+      
+      notifyListeners();
+      debugPrint('ChatStateManager: User profile updated successfully');
+      
+    } catch (e) {
+      debugPrint('ChatStateManager: Error updating profile: $e');
       _setError('پروفائل اپڈیٹ کرنے میں خرابی: $e');
     }
   }
-
-  // Update mood
-  Future<void> updateMood(String mood, int stressLevel, {DateTime? lastCried}) async {
+  
+  // Enhanced mood tracking
+  Future<void> updateUserMood(String mood, int stressLevel, {DateTime? lastCried}) async {
     try {
       _userProfile['currentMood'] = mood;
       _userProfile['stressLevel'] = stressLevel;
@@ -232,402 +480,244 @@ class ChatStateManager extends ChangeNotifier {
       
       await AIService.updateUserMood(mood, stressLevel, lastCried: lastCried);
       await _loadUserData(); // Reload to get updated mood logs
-      notifyListeners();
+      
+      debugPrint('ChatStateManager: Mood updated - $mood, stress: $stressLevel');
+      
     } catch (e) {
+      debugPrint('ChatStateManager: Error updating mood: $e');
       _setError('موڈ اپڈیٹ کرنے میں خرابی: $e');
     }
   }
-
-  // Start new chat
+  
+  // Start new conversation
   Future<void> startNewChat() async {
     try {
-      // Save current conversation if it has enough messages
-      if (_messages.where((msg) => msg.isUser).length >= 4) {
-        final conversationHistory = _getConversationHistory();
-        final summary = await AIService.generateConversationSummary(conversationHistory);
-        if (summary.isNotEmpty) {
-          await AIService.saveConversationSummary(summary);
-        }
+      // Save current conversation if substantial
+      if (_messages.where((msg) => msg.isUser).length >= 3) {
+        await _saveCurrentConversationSummary();
       }
       
       _messages.clear();
       await AIService.clearCurrentConversation();
       await _loadUserData();
       _clearError();
+      
+      // Clear conversation from storage
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('current_conversation');
+      
       notifyListeners();
+      debugPrint('ChatStateManager: New chat started successfully');
+      
     } catch (e) {
+      debugPrint('ChatStateManager: Error starting new chat: $e');
       _setError('نئی گفتگو شروع کرنے میں خرابی: $e');
     }
   }
-
+  
   // Clear all data
   Future<void> clearAllData() async {
     try {
       await AIService.clearAllData();
+      
       _messages.clear();
       _userProfile.clear();
       _conversationSummaries.clear();
       _moodLogs.clear();
+      
+      // Clear all caches
+      _cachedUserName = null;
+      _cachedTotalChats = null;
+      _cachedModeInfo.clear();
+      
       _clearError();
       notifyListeners();
+      
+      debugPrint('ChatStateManager: All data cleared successfully');
+      
     } catch (e) {
+      debugPrint('ChatStateManager: Error clearing data: $e');
       _setError('ڈیٹا صاف کرنے میں خرابی: $e');
     }
   }
-
-  // Auto-save conversation
-  Future<void> _autoSaveConversation() async {
+  
+  // Connection monitoring
+  Future<void> _checkConnection() async {
     try {
-      final conversationHistory = _getConversationHistory();
-      await AIService.autoSaveConversationSummary(conversationHistory);
-      // Reload summaries
-      _conversationSummaries = await AIService.getConversationSummaries();
+      final connected = await AIService.hasInternetConnection();
+      if (_isConnected != connected) {
+        _isConnected = connected;
+        notifyListeners();
+        debugPrint('ChatStateManager: Connection status changed: $connected');
+      }
     } catch (e) {
-      // Silent fail for auto-save
-      debugPrint('Auto-save failed: $e');
-    }
-  }
-
-  // Get conversation history for AI
-  List<Map<String, String>> _getConversationHistory() {
-    return _messages.map((msg) => {
-      'role': msg.isUser ? 'user' : 'assistant',
-      'content': msg.content,
-    }).toList();
-  }
-
-  // Private helper methods
-  void _setTyping(bool typing) {
-    if (_isTyping != typing) {
-      _isTyping = typing;
-      
-      if (typing) {
-        _typingTimer?.cancel();
-        _typingTimer = Timer(Duration(seconds: 30), () {
-          _setTyping(false);
-          _setError('جواب کا انتظار زیادہ ہو گیا۔ براہ کرم دوبارہ کوشش کریں۔');
-        });
-      } else {
-        _typingTimer?.cancel();
+      if (_isConnected) {
+        _isConnected = false;
+        notifyListeners();
+        debugPrint('ChatStateManager: Connection check failed: $e');
       }
     }
   }
-
+  
+  // Start connection monitoring
+  void _startConnectionMonitoring() {
+    _connectionTimer?.cancel();
+    _connectionTimer = Timer.periodic(Duration(seconds: _connectionCheckInterval), (_) {
+      _checkConnection();
+    });
+  }
+  
+  // Start auto-save
+  void _startAutoSave() {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer.periodic(Duration(seconds: _autoSaveInterval), (_) {
+      _autoSaveConversation();
+    });
+  }
+  
+  // Start heartbeat for keeping app state fresh
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _performHeartbeat();
+    });
+  }
+  
+  // Heartbeat operations
+  Future<void> _performHeartbeat() async {
+    try {
+      // Refresh user data periodically
+      await _loadUserData();
+      
+      // Clean up old messages if needed
+      if (_messages.length > _maxMessages) {
+        _messages.removeRange(0, _messages.length - (_maxMessages * 0.8).round());
+        await _saveConversationHistory();
+      }
+      
+    } catch (e) {
+      debugPrint('ChatStateManager: Heartbeat error: $e');
+    }
+  }
+  
+  // Auto-save conversation
+  Future<void> _autoSaveConversation() async {
+    if (_messages.length < 4) return;
+    
+    try {
+      await _saveConversationHistory();
+      
+      // Auto-save summary if conversation is substantial
+      if (_messages.where((msg) => msg.isUser).length >= 6) {
+        await _autoSaveConversationSummary();
+      }
+      
+    } catch (e) {
+      debugPrint('ChatStateManager: Auto-save error: $e');
+    }
+  }
+  
+  // Save conversation summary
+  Future<void> _saveCurrentConversationSummary() async {
+    try {
+      final conversationHistory = _buildConversationHistory();
+      final summary = await AIService.generateConversationSummary(conversationHistory);
+      
+      if (summary.isNotEmpty) {
+        await AIService.saveConversationSummary(summary);
+        _conversationSummaries = await AIService.getConversationSummaries();
+        notifyListeners();
+        debugPrint('ChatStateManager: Conversation summary saved');
+      }
+    } catch (e) {
+      debugPrint('ChatStateManager: Error saving conversation summary: $e');
+    }
+  }
+  
+  // Auto-save conversation summary
+  Future<void> _autoSaveConversationSummary() async {
+    try {
+      await _saveCurrentConversationSummary();
+    } catch (e) {
+      debugPrint('ChatStateManager: Auto-save summary error: $e');
+    }
+  }
+  
+  // Update chat statistics
+  Future<void> _updateChatStatistics() async {
+    try {
+      await AIService.incrementChatCounter();
+      _cachedTotalChats = null; // Reset cache
+    } catch (e) {
+      debugPrint('ChatStateManager: Error updating chat statistics: $e');
+    }
+  }
+  
+  // Build conversation history for AI context
+  List<Map<String, String>> _buildConversationHistory() {
+    // Get last 20 messages for context (to avoid token limits)
+    final recentMessages = _messages.length > 20 
+        ? _messages.sublist(_messages.length - 20)
+        : _messages;
+    
+    return recentMessages
+        .where((msg) => msg.metadata?['system'] != true) // Exclude system messages
+        .map((msg) => {
+          'role': msg.isUser ? 'user' : 'assistant',
+          'content': msg.content,
+        })
+        .toList();
+  }
+  
+  // State setters with notifications
+  void _setTyping(bool typing) {
+    if (_isTyping != typing) {
+      _isTyping = typing;
+      notifyListeners();
+    }
+  }
+  
+  void _setListening(bool listening) {
+    if (_isListening != listening) {
+      _isListening = listening;
+      notifyListeners();
+    }
+  }
+  
+  void _setSpeaking(bool speaking) {
+    if (_isSpeaking != speaking) {
+      _isSpeaking = speaking;
+      notifyListeners();
+    }
+  }
+  
+  void _setLoading(bool loading) {
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      notifyListeners();
+    }
+  }
+  
   void _setError(String error) {
     _lastError = error;
+    debugPrint('ChatStateManager Error: $error');
     notifyListeners();
   }
-
+  
   void _clearError() {
     if (_lastError.isNotEmpty) {
       _lastError = '';
       notifyListeners();
     }
   }
-
-  // Retry last message
-  Future<void> retryLastMessage() async {
-    if (_messages.isNotEmpty) {
-      // Find the last user message
-      for (int i = _messages.length - 1; i >= 0; i--) {
-        if (_messages[i].isUser) {
-          final lastUserMessage = _messages[i].content;
-          // Remove messages after the last user message
-          _messages.removeRange(i + 1, _messages.length);
-          await sendMessage(lastUserMessage);
-          break;
-        }
-      }
-    }
-  }
-
-  // Get app statistics
-  Map<String, dynamic> getAppStats() {
-    return {
-      'totalMessages': _messages.length,
-      'userMessages': _messages.where((msg) => msg.isUser).length,
-      'aiMessages': _messages.where((msg) => !msg.isUser).length,
-      'currentMode': _currentMode,
-      'isConnected': _isConnected,
-      'hasProfile': _userProfile['name']?.toString().isNotEmpty ?? false,
-      'moodLogsCount': _moodLogs.length,
-      'conversationSummariesCount': _conversationSummaries.length,
-    };
-  }
-
-  // Search in conversation history
-  List<ChatMessage> searchMessages(String query) {
-    if (query.trim().isEmpty) return [];
-    
-    final lowerQuery = query.toLowerCase();
-    return _messages.where((msg) => 
-      msg.content.toLowerCase().contains(lowerQuery)
-    ).toList();
-  }
-
-  // Export conversation
-  String exportConversation() {
-    final buffer = StringBuffer();
-    buffer.writeln('راستہ - گفتگو کی برآمد');
-    buffer.writeln('تاریخ: ${DateTime.now().toString().split('.')[0]}');
-    buffer.writeln('موڈ: $_currentMode');
-    buffer.writeln('مجموعی پیغامات: ${_messages.length}');
-    buffer.writeln('${'=' * 50}');
-    buffer.writeln();
-    
-    for (final message in _messages) {
-      final sender = message.isUser ? 'آپ' : 'راستہ';
-      final time = '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}';
-      buffer.writeln('[$time] $sender: ${message.content}');
-      buffer.writeln();
-    }
-    
-    return buffer.toString();
-  }
-
-  @override
-  void dispose() {
-    _connectionTimer?.cancel();
-    _typingTimer?.cancel();
-    AIService.stopSpeaking();
-    AIService.stopListening();
-    super.dispose();
-  }
-}
-
-// Chat message model
-class ChatMessage {
-  final String id;
-  final String content;
-  final bool isUser;
-  final DateTime timestamp;
-  final String mode;
-  final bool isError;
-  final Map<String, dynamic>? metadata;
-
-  ChatMessage({
-    required this.id,
-    required this.content,
-    required this.isUser,
-    required this.timestamp,
-    required this.mode,
-    this.isError = false,
-    this.metadata,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'content': content,
-      'isUser': isUser,
-      'timestamp': timestamp.toIso8601String(),
-      'mode': mode,
-      'isError': isError,
-      'metadata': metadata,
-    };
-  }
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    return ChatMessage(
-      id: json['id'],
-      content: json['content'],
-      isUser: json['isUser'],
-      timestamp: DateTime.parse(json['timestamp']),
-      mode: json['mode'],
-      isError: json['isError'] ?? false,
-      metadata: json['metadata'],
-    );
-  }
-
-  ChatMessage copyWith({
-    String? id,
-    String? content,
-    bool? isUser,
-    DateTime? timestamp,
-    String? mode,
-    bool? isError,
-    Map<String, dynamic>? metadata,
-  }) {
-    return ChatMessage(
-      id: id ?? this.id,
-      content: content ?? this.content,
-      isUser: isUser ?? this.isUser,
-      timestamp: timestamp ?? this.timestamp,
-      mode: mode ?? this.mode,
-      isError: isError ?? this.isError,
-      metadata: metadata ?? this.metadata,
-    );
-  }
-}
-
-// Performance optimizations for the chat
-class ChatPerformanceOptimizer {
-  static const int maxMessagesInMemory = 100;
-  static const int messagesToKeepWhenCleanup = 80;
-
-  // Optimize message list for performance
-  static List<ChatMessage> optimizeMessageList(List<ChatMessage> messages) {
-    if (messages.length <= maxMessagesInMemory) {
-      return messages;
-    }
-
-    // Keep recent messages and some important older ones
-    final recentMessages = messages.sublist(messages.length - messagesToKeepWhenCleanup);
-    return recentMessages;
-  }
-
-  // Debounce function for text input
-  static Timer? _debounceTimer;
-  static void debounce(VoidCallback callback, {Duration delay = const Duration(milliseconds: 300)}) {
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(delay, callback);
-  }
-
-  // Throttle function for frequent operations
-  static DateTime? _lastThrottleTime;
-  static bool throttle({Duration delay = const Duration(milliseconds: 100)}) {
-    final now = DateTime.now();
-    if (_lastThrottleTime == null || now.difference(_lastThrottleTime!) >= delay) {
-      _lastThrottleTime = now;
-      return true;
-    }
-    return false;
-  }
-
-  // Memory cleanup
-  static void cleanup() {
-    _debounceTimer?.cancel();
-    _lastThrottleTime = null;
-  }
-}
-
-// Cache manager for better performance
-class ChatCacheManager {
-  static final Map<String, dynamic> _cache = {};
-  static final Map<String, DateTime> _cacheTimestamps = {};
-  static const Duration cacheExpiry = Duration(minutes: 5);
-
-  static void set(String key, dynamic value) {
-    _cache[key] = value;
-    _cacheTimestamps[key] = DateTime.now();
-  }
-
-  static T? get<T>(String key) {
-    final timestamp = _cacheTimestamps[key];
-    if (timestamp == null) return null;
-
-    if (DateTime.now().difference(timestamp) > cacheExpiry) {
-      _cache.remove(key);
-      _cacheTimestamps.remove(key);
-      return null;
-    }
-
-    return _cache[key] as T?;
-  }
-
-  static void clear() {
-    _cache.clear();
-    _cacheTimestamps.clear();
-  }
-
-  static void clearExpired() {
-    final now = DateTime.now();
-    final expiredKeys = <String>[];
-
-    for (final entry in _cacheTimestamps.entries) {
-      if (now.difference(entry.value) > cacheExpiry) {
-        expiredKeys.add(entry.key);
-      }
-    }
-
-    for (final key in expiredKeys) {
-      _cache.remove(key);
-      _cacheTimestamps.remove(key);
-    }
-  }
-}
-
-// Analytics for chat usage
-class ChatAnalytics {
-  static final List<Map<String, dynamic>> _events = [];
-
-  static void trackEvent(String eventName, {Map<String, dynamic>? parameters}) {
-    _events.add({
-      'event': eventName,
-      'timestamp': DateTime.now().toIso8601String(),
-      'parameters': parameters ?? {},
-    });
-
-    // Keep only last 100 events
-    if (_events.length > 100) {
-      _events.removeAt(0);
-    }
-  }
-
-  static void trackMessageSent(String mode, int messageLength) {
-    trackEvent('message_sent', parameters: {
-      'mode': mode,
-      'message_length': messageLength,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-  }
-
-  static void trackModeChanged(String oldMode, String newMode) {
-    trackEvent('mode_changed', parameters: {
-      'old_mode': oldMode,
-      'new_mode': newMode,
-    });
-  }
-
-  static void trackVoiceUsed(String action) {
-    trackEvent('voice_used', parameters: {
-      'action': action, // 'listening' or 'speaking'
-    });
-  }
-
-  static void trackError(String errorType, String errorMessage) {
-    trackEvent('error_occurred', parameters: {
-      'error_type': errorType,
-      'error_message': errorMessage,
-    });
-  }
-
-  static Map<String, dynamic> getUsageStats() {
-    final messagesSent = _events.where((e) => e['event'] == 'message_sent').length;
-    final modesUsed = _events
-        .where((e) => e['event'] == 'mode_changed')
-        .map((e) => e['parameters']['new_mode'])
-        .toSet()
-        .length;
-    final voiceUsage = _events.where((e) => e['event'] == 'voice_used').length;
-    final errors = _events.where((e) => e['event'] == 'error_occurred').length;
-
-    return {
-      'total_messages_sent': messagesSent,
-      'different_modes_used': modesUsed,
-      'voice_interactions': voiceUsage,
-      'total_errors': errors,
-      'session_start': _events.isNotEmpty ? _events.first['timestamp'] : null,
-      'last_activity': _events.isNotEmpty ? _events.last['timestamp'] : null,
-    };
-  }
-
-  static List<Map<String, dynamic>> getRecentEvents({int limit = 20}) {
-    final recentEvents = _events.reversed.take(limit).toList();
-    return recentEvents;
-  }
-
-  static void clearAnalytics() {
-    _events.clear();
-  }
-}
-
-// Error handling utilities
-class ChatErrorHandler {
-  static String getLocalizedErrorMessage(dynamic error) {
+  
+  // Enhanced error message localization
+  String _getLocalizedErrorMessage(dynamic error) {
     final errorString = error.toString().toLowerCase();
     
-    if (errorString.contains('timeout')) {
+    if (error is TimeoutException) {
+      return 'وقت ختم ہو گیا۔ براہ کرم دوبارہ کوشش کریں۔ ⏰';
+    } else if (errorString.contains('timeout')) {
       return 'انٹرنیٹ سست ہے۔ براہ کرم دوبارہ کوشش کریں۔ 🐌';
     } else if (errorString.contains('network') || errorString.contains('connection')) {
       return 'کنکشن میں خرابی ہے۔ براہ کرم انٹرنیٹ چیک کریں۔ 📡';
@@ -637,41 +727,50 @@ class ChatErrorHandler {
       return 'AI سروس میں خرابی ہے۔ براہ کرم بعد میں کوشش کریں۔ 🔧';
     } else if (errorString.contains('429')) {
       return 'AI سروس مصروف ہے۔ براہ کرم کچھ دیر بعد کوشش کریں۔ ⏰';
+    } else if (errorString.contains('microphone') || errorString.contains('speech')) {
+      return 'مائیکروفون کی خرابی۔ براہ کرم permissions چیک کریں۔ 🎤';
     } else {
       return 'کوئی خرابی ہوئی ہے۔ براہ کرم دوبارہ کوشش کریں۔ 🔄';
     }
   }
-
-  static void logError(dynamic error, StackTrace? stackTrace) {
-    if (kDebugMode) {
-      print('Chat Error: $error');
-      if (stackTrace != null) {
-        print('Stack Trace: $stackTrace');
-      }
+  
+  // Get app statistics
+  Map<String, dynamic> getAppStatistics() {
+    return {
+      'total_messages': _messages.length,
+      'user_messages': _messages.where((msg) => msg.isUser).length,
+      'ai_messages': _messages.where((msg) => !msg.isUser).length,
+      'current_mode': _currentMode,
+      'total_chats': totalChats,
+      'conversation_summaries': _conversationSummaries.length,
+      'mood_logs': _moodLogs.length,
+      'is_connected': _isConnected,
+      'is_initialized': _isInitialized,
+    };
+  }
+  
+  // Cleanup resources
+  @override
+  void dispose() {
+    debugPrint('ChatStateManager: Disposing resources...');
+    
+    _connectionTimer?.cancel();
+    _typingTimer?.cancel();
+    _autoSaveTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    
+    // Save current state before disposing
+    if (_isInitialized && _messages.isNotEmpty) {
+      _saveConversationHistory();
     }
     
-    // Track error in analytics
-    ChatAnalytics.trackError(
-      error.runtimeType.toString(),
-      error.toString(),
-    );
+    super.dispose();
   }
+}
 
-  static void handleError(BuildContext context, dynamic error) {
-    final message = getLocalizedErrorMessage(error);
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        action: SnackBarAction(
-          label: 'ٹھیک ہے',
-          textColor: Colors.white,
-          onPressed: () {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          },
-        ),
-      ),
-    );
-  }
+// Utility function for fire-and-forget operations
+void unawaited(Future<void> future) {
+  future.catchError((error) {
+    debugPrint('Unawaited operation failed: $error');
+  });
 }

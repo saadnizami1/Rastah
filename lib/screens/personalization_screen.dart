@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert'; // Add this line
+import 'package:shared_preferences/shared_preferences.dart'; // Add this line
 
 class PersonalizationScreen extends StatefulWidget {
   const PersonalizationScreen({super.key, required void Function() onNext});
@@ -17,7 +19,7 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
   // Data storage
   final Map<String, dynamic> _userData = {};
   
-  // Questions data structure
+  // Questions data struct
   late List<QuestionData> _questions;
 
   @override

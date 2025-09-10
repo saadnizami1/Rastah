@@ -235,7 +235,7 @@ Professional لیکن گرم جوش اردو انداز استعمال کریں�
     }
   }
 
-  // Build context with enhanced mode-specific prompts
+  // 🔧 UPDATED: Enhanced context building with full personalization data
   static List<Map<String, String>> _buildContextWithMode({
     required String userMessage,
     required String mode,
@@ -259,21 +259,110 @@ Professional لیکن گرم جوش اردو انداز استعمال کریں�
 - جوابات میں مناسب emojis استعمال کریں لیکن زیادہ نہیں
 - گرم جوش، محبت بھرا اور مددگار انداز رکھیں''';
 
-    // Add user context if available
+    // 🔧 NEW: Enhanced user context with ALL personalization data
     if (userProfile != null && userProfile.isNotEmpty) {
       final profileInfo = <String>[];
-      if (userProfile['name'] != null && userProfile['name'].toString().isNotEmpty) {
+      final personalityInfo = <String>[];
+      final preferencesInfo = <String>[];
+      
+      // Basic identity
+      if (userProfile['name']?.isNotEmpty == true) {
         profileInfo.add('نام: ${userProfile['name']}');
       }
-      if (userProfile['age'] != null) profileInfo.add('عمر: ${userProfile['age']} سال');
-      if (userProfile['city'] != null && userProfile['city'].toString().isNotEmpty) {
+      if (userProfile['age'] != null) {
+        profileInfo.add('عمر: ${userProfile['age']} سال');
+      }
+      if (userProfile['gender']?.isNotEmpty == true) {
+        profileInfo.add('جنس: ${userProfile['gender']}');
+      }
+      
+      // Daily life context
+      if (userProfile['student_type']?.isNotEmpty == true) {
+        profileInfo.add('پیشہ: ${userProfile['student_type']}');
+      }
+      if (userProfile['city']?.isNotEmpty == true) {
         profileInfo.add('شہر: ${userProfile['city']}');
       }
-      if (userProfile['currentMood'] != null) profileInfo.add('موجودہ موڈ: ${userProfile['currentMood']}');
-      if (userProfile['stressLevel'] != null) profileInfo.add('تناؤ کی سطح: ${userProfile['stressLevel']}/10');
+      if (userProfile['preferred_time']?.isNotEmpty == true) {
+        profileInfo.add('پسندیدہ وقت: ${userProfile['preferred_time']}');
+      }
       
+      // Current mood & stress
+      if (userProfile['current_mood']?.isNotEmpty == true) {
+        profileInfo.add('موجودہ موڈ: ${userProfile['current_mood']}');
+      }
+      if (userProfile['stress_level'] != null) {
+        profileInfo.add('تناؤ کی سطح: ${userProfile['stress_level']}/10');
+      }
+      
+      // Important topics and concerns
+      if (userProfile['important_topics']?.isNotEmpty == true) {
+        try {
+          final topics = userProfile['important_topics'] is List 
+              ? userProfile['important_topics'] 
+              : json.decode(userProfile['important_topics']);
+          if (topics.isNotEmpty) {
+            personalityInfo.add('اہم موضوعات: ${topics.join(', ')}');
+          }
+        } catch (e) {
+          // Handle parsing error silently
+        }
+      }
+      
+      // Hobbies and interests
+      if (userProfile['hobbies']?.isNotEmpty == true) {
+        try {
+          final hobbies = userProfile['hobbies'] is List 
+              ? userProfile['hobbies'] 
+              : json.decode(userProfile['hobbies']);
+          if (hobbies.isNotEmpty) {
+            personalityInfo.add('دلچسپیاں: ${hobbies.join(', ')}');
+          }
+        } catch (e) {
+          // Handle parsing error silently
+        }
+      }
+      
+      // Social preferences
+      if (userProfile['social_preference'] != null) {
+        final socialValue = userProfile['social_preference'];
+        if (socialValue <= 3) {
+          personalityInfo.add('ترجیح: اکیلے وقت گزارنا پسند کرتے ہیں');
+        } else if (socialValue >= 7) {
+          personalityInfo.add('ترجیح: دوسروں کے ساتھ وقت گزارنا پسند کرتے ہیں');
+        }
+      }
+      
+      // Therapy and communication preferences
+      if (userProfile['therapy_style']?.isNotEmpty == true) {
+        preferencesInfo.add('تھراپی انداز: ${userProfile['therapy_style']}');
+      }
+      if (userProfile['communication_style'] != null) {
+        final commValue = userProfile['communication_style'];
+        if (commValue <= 3) {
+          preferencesInfo.add('رابطے کا انداز: نرم اور آہستہ');
+        } else if (commValue >= 7) {
+          preferencesInfo.add('رابطے کا انداز: سیدھی اور صاف بات');
+        }
+      }
+      if (userProfile['input_preference']?.isNotEmpty == true) {
+        preferencesInfo.add('ترجیحی انداز: ${userProfile['input_preference']}');
+      }
+      
+      // Build comprehensive user context
       if (profileInfo.isNotEmpty) {
-        systemPrompt += '\n\nUser کی معلومات:\n${profileInfo.join('\n')}';
+        systemPrompt += '\n\n📋 User کی بنیادی معلومات:\n${profileInfo.join('\n')}';
+      }
+      if (personalityInfo.isNotEmpty) {
+        systemPrompt += '\n\n🎯 User کی شخصیت اور دلچسپیاں:\n${personalityInfo.join('\n')}';
+      }
+      if (preferencesInfo.isNotEmpty) {
+        systemPrompt += '\n\n⚙️ User کی ترجیحات:\n${preferencesInfo.join('\n')}';
+      }
+      
+      // Add personalization instruction
+      if (profileInfo.isNotEmpty || personalityInfo.isNotEmpty || preferencesInfo.isNotEmpty) {
+        systemPrompt += '\n\n🤝 ان تمام معلومات کو مدنظر رکھتے ہوئے personalized، relevant اور user کی شخصیت کے مطابق جوابات دیں۔ User کے مزاج، دلچسپیوں اور ترجیحات کا خیال رکھیں۔';
       }
     }
 
@@ -594,22 +683,54 @@ Professional لیکن گرم جوش اردو انداز استعمال کریں�
     }
   }
 
-  // Get user profile with enhanced data
+  // 🔧 UPDATED: Enhanced getUserProfile with ALL personalization data
   static Future<Map<String, dynamic>> getUserProfile() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      
+      // Helper function to safely decode JSON strings
+      dynamic safeJsonDecode(String? jsonString) {
+        if (jsonString == null || jsonString.isEmpty) return null;
+        try {
+          return json.decode(jsonString);
+        } catch (e) {
+          return jsonString; // Return as string if not valid JSON
+        }
+      }
+      
       return {
-        'name': prefs.getString('user_name') ?? '',
-        'age': prefs.getInt('user_age'),
-        'city': prefs.getString('user_city') ?? '',
+        // Basic identity
+        'name': prefs.getString('name') ?? prefs.getString('user_name') ?? '',
+        'age': prefs.getInt('age') ?? prefs.getInt('user_age'),
+        'gender': prefs.getString('gender') ?? prefs.getString('user_gender') ?? '',
+        
+        // Daily life data
+        'student_type': prefs.getString('student_type') ?? prefs.getString('user_occupation') ?? '',
+        'city': prefs.getString('city') ?? prefs.getString('user_city') ?? '',
+        'preferred_time': prefs.getString('preferred_time') ?? prefs.getString('user_preferred_time') ?? '',
+        
+        // Mood & mental state
+        'current_mood': prefs.getString('current_mood') ?? '😐',
+        'stress_level': prefs.getInt('stress_level') ?? 5,
+        'important_topics': safeJsonDecode(prefs.getString('important_topics')),
+        
+        // Interests & personality
+        'hobbies': safeJsonDecode(prefs.getString('hobbies')),
+        'social_preference': prefs.getInt('social_preference'),
+        
+        // Therapy & communication preferences
+        'therapy_style': prefs.getString('therapy_style') ?? '',
+        'communication_style': prefs.getInt('communication_style'),
+        'input_preference': prefs.getString('input_preference') ?? '',
+        
+        // App usage data
         'profilePic': prefs.getString('profile_pic') ?? '',
-        'currentMood': prefs.getString('current_mood') ?? '😐',
-        'stressLevel': prefs.getInt('stress_level') ?? 5,
         'lastCried': prefs.getString('last_cried'),
         'joinDate': prefs.getString('join_date') ?? DateTime.now().toIso8601String().split('T')[0],
         'totalChats': prefs.getInt('total_chats') ?? 0,
       };
     } catch (e) {
+      print('Error loading user profile: $e');
       return {};
     }
   }
@@ -619,16 +740,26 @@ Professional لیکن گرم جوش اردو انداز استعمال کریں�
     try {
       final prefs = await SharedPreferences.getInstance();
       
+      // Basic identity
       if (profile['name'] != null) await prefs.setString('user_name', profile['name']);
       if (profile['age'] != null) await prefs.setInt('user_age', profile['age']);
+      if (profile['gender'] != null) await prefs.setString('user_gender', profile['gender']);
+      
+      // Daily life data
+      if (profile['student_type'] != null) await prefs.setString('user_occupation', profile['student_type']);
       if (profile['city'] != null) await prefs.setString('user_city', profile['city']);
-      if (profile['profilePic'] != null) await prefs.setString('profile_pic', profile['profilePic']);
+      if (profile['preferred_time'] != null) await prefs.setString('user_preferred_time', profile['preferred_time']);
+      
+      // Mood data
       if (profile['currentMood'] != null) await prefs.setString('current_mood', profile['currentMood']);
       if (profile['stressLevel'] != null) await prefs.setInt('stress_level', profile['stressLevel']);
       if (profile['lastCried'] != null) await prefs.setString('last_cried', profile['lastCried']);
       
+      // Other data
+      if (profile['profilePic'] != null) await prefs.setString('profile_pic', profile['profilePic']);
+      
     } catch (e) {
-      // Silent fail
+      print('Error updating user profile: $e');
     }
   }
 
