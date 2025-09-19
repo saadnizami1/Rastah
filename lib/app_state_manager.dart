@@ -605,7 +605,7 @@ class AppStateManager extends ChangeNotifier {
       
       streak++;
     }
-    
+
     return streak;
   }
   
