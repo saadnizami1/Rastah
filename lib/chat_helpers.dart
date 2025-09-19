@@ -53,7 +53,7 @@ class ChatAnimations {
             width: size,
             height: size,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.3 + (scale * 0.7)),
+              color: color.withValues(alpha: 0.3 + (scale * 0.7)),
               shape: BoxShape.circle,
             ),
           ),
@@ -186,7 +186,7 @@ class _EnhancedMessageBubbleState extends State<EnhancedMessageBubble>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Colors.black.withValues(alpha: 0.1),
                                 blurRadius: 8,
                                 offset: Offset(0, 2),
                               ),
@@ -337,7 +337,7 @@ class ChatLoadingStates {
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withValues(alpha: 0.1),
                   blurRadius: 8,
                   offset: Offset(0, 2),
                 ),
@@ -359,7 +359,7 @@ class ChatLoadingStates {
             width: 120,
             height: 120,
             decoration: BoxDecoration(
-              color: Color(0xFF2E7D63).withOpacity(0.1),
+              color: Color(0xFF2E7D63).withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -400,9 +400,9 @@ class ChatLoadingStates {
         margin: EdgeInsets.all(20),
         padding: EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.1),
+          color: Colors.red.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.red.withOpacity(0.3)),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -503,7 +503,7 @@ class _TypingAnimationState extends State<_TypingAnimation>
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: Color(0xFF2E7D63).withOpacity(0.7 + (0.3 * _animations[index].value)),
+                    color: Color(0xFF2E7D63).withValues(alpha: 0.7 + (0.3 * _animations[index].value)),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -596,10 +596,10 @@ class _ChatInputFieldState extends State<ChatInputField>
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white.withValues(alpha: 0.95),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: Offset(0, -2),
           ),
@@ -620,7 +620,7 @@ class _ChatInputFieldState extends State<ChatInputField>
                       shape: BoxShape.circle,
                       boxShadow: widget.isListening ? [
                         BoxShadow(
-                          color: Colors.red.withOpacity(0.3),
+                          color: Colors.red.withValues(alpha: 0.3),
                           blurRadius: 10,
                           spreadRadius: 2,
                         ),
@@ -771,9 +771,9 @@ class _ConnectionStatusIndicatorState extends State<ConnectionStatusIndicator>
       return Container(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.1),
+          color: Colors.red.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.red.withOpacity(0.3)),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -796,10 +796,10 @@ class _ConnectionStatusIndicatorState extends State<ConnectionStatusIndicator>
           return Container(
             padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: Color(0xFF2E7D63).withOpacity(0.1 * _animation.value),
+              color: Color(0xFF2E7D63).withValues(alpha: 0.1 * _animation.value),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: Color(0xFF2E7D63).withOpacity(0.3 * _animation.value),
+                color: Color(0xFF2E7D63).withValues(alpha: 0.3 * _animation.value),
               ),
             ),
             child: Row(

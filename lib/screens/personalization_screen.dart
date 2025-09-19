@@ -251,7 +251,7 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
           // Glass overlay
           Positioned.fill(
             child: Container(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
             ),
           ),
           SafeArea(
@@ -278,15 +278,15 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
   // Glass effect decoration
   BoxDecoration _glassDecoration({double opacity = 0.15}) {
     return BoxDecoration(
-      color: Colors.white.withOpacity(opacity),
+      color: Colors.white.withValues(alpha: opacity),
       borderRadius: BorderRadius.circular(20),
       border: Border.all(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 0.2),
         width: 1,
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.1),
+          color: Colors.black.withValues(alpha: 0.1),
           blurRadius: 10,
           offset: const Offset(0, 4),
         ),
@@ -426,20 +426,20 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
           decoration: InputDecoration(
             hintText: _isUrdu ? 'یہاں لکھیں...' : 'Type here...',
             hintStyle: GoogleFonts.notoNaskhArabic(
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withValues(alpha: 0.7),
             ),
             filled: true,
-            fillColor: Colors.white.withOpacity(0.15),
+            fillColor: Colors.white.withValues(alpha: 0.15),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(15),
               borderSide: BorderSide(
-                color: Colors.white.withOpacity(0.3),
+                color: Colors.white.withValues(alpha: 0.3),
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(15),
               borderSide: BorderSide(
-                color: Colors.white.withOpacity(0.3),
+                color: Colors.white.withValues(alpha: 0.3),
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -492,7 +492,7 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
                     size: 40,
                     color: selectedAge > 13 
                       ? Colors.white 
-                      : Colors.white.withOpacity(0.3),
+                      : Colors.white.withValues(alpha: 0.3),
                   ),
                 ),
                 const SizedBox(width: 40),
@@ -508,7 +508,7 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
                     size: 40,
                     color: selectedAge < 100 
                       ? Colors.white 
-                      : Colors.white.withOpacity(0.3),
+                      : Colors.white.withValues(alpha: 0.3),
                   ),
                 ),
               ],
@@ -538,13 +538,13 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
                 color: isSelected 
-                  ? Colors.white.withOpacity(0.3)
-                  : Colors.white.withOpacity(0.15),
+                  ? Colors.white.withValues(alpha: 0.3)
+                  : Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(25),
                 border: Border.all(
                   color: isSelected 
                     ? Colors.white
-                    : Colors.white.withOpacity(0.3),
+                    : Colors.white.withValues(alpha: 0.3),
                   width: 2,
                 ),
               ),
@@ -588,13 +588,13 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
                 color: isSelected 
-                  ? Colors.white.withOpacity(0.3)
-                  : Colors.white.withOpacity(0.15),
+                  ? Colors.white.withValues(alpha: 0.3)
+                  : Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(25),
                 border: Border.all(
                   color: isSelected 
                     ? Colors.white
-                    : Colors.white.withOpacity(0.3),
+                    : Colors.white.withValues(alpha: 0.3),
                   width: 2,
                 ),
               ),
@@ -642,12 +642,12 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
             hint: Text(
               _isUrdu ? 'انتخاب کریں' : 'Select',
               style: GoogleFonts.notoNaskhArabic(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withValues(alpha: 0.7),
               ),
             ),
             icon: Icon(Icons.arrow_drop_down, color: Colors.white),
             isExpanded: true,
-            dropdownColor: Colors.black.withOpacity(0.8),
+            dropdownColor: Colors.black.withValues(alpha: 0.8),
             items: options.map((option) {
               return DropdownMenuItem<String>(
                 value: option,
@@ -691,13 +691,13 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
               height: 80,
               decoration: BoxDecoration(
                 color: isSelected 
-                  ? Colors.white.withOpacity(0.3)
-                  : Colors.white.withOpacity(0.15),
+                  ? Colors.white.withValues(alpha: 0.3)
+                  : Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: isSelected 
                     ? Colors.white
-                    : Colors.white.withOpacity(0.3),
+                    : Colors.white.withValues(alpha: 0.3),
                   width: 3,
                 ),
               ),
@@ -739,7 +739,7 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     activeTrackColor: Colors.white,
-                    inactiveTrackColor: Colors.white.withOpacity(0.3),
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
                     thumbColor: Colors.white,
                     thumbShape: RoundSliderThumbShape(enabledThumbRadius: 12),
                     trackHeight: 4,
@@ -806,13 +806,13 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: isSelected 
-                    ? Colors.white.withOpacity(0.3)
-                    : Colors.white.withOpacity(0.15),
+                    ? Colors.white.withValues(alpha: 0.3)
+                    : Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: isSelected 
                       ? Colors.white
-                      : Colors.white.withOpacity(0.3),
+                      : Colors.white.withValues(alpha: 0.3),
                     width: 2,
                   ),
                 ),
@@ -853,7 +853,7 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white.withOpacity(0.3) : Colors.transparent,
+                  color: isSelected ? Colors.white.withValues(alpha: 0.3) : Colors.transparent,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -937,8 +937,8 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
           onPressed: canProceed ? _nextQuestion : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: canProceed 
-              ? Colors.greenAccent.withOpacity(0.8)
-              : Colors.grey.withOpacity(0.5),
+              ? Colors.greenAccent.withValues(alpha: 0.8)
+              : Colors.grey.withValues(alpha: 0.5),
             foregroundColor: Colors.black87,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(

@@ -21,7 +21,7 @@ class LanguageScreen extends StatelessWidget {
           // Glass overlay
           Positioned.fill(
             child: Container(
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black.withValues(alpha: 0.35),
             ),
           ),
           SafeArea(
@@ -57,7 +57,7 @@ class LanguageScreen extends StatelessWidget {
                           'Language Support',
                           style: GoogleFonts.poppins(
                             fontSize: 16,
-                            color: Colors.white.withOpacity(0.8),
+                            color: Colors.white.withValues(alpha: 0.8),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -157,10 +157,10 @@ class LanguageScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(15),
                             border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
+                              color: Colors.white.withValues(alpha: 0.3),
                               width: 1,
                             ),
                           ),
@@ -186,7 +186,7 @@ class LanguageScreen extends StatelessWidget {
                                 'Always in Urdu',
                                 style: GoogleFonts.poppins(
                                   fontSize: 14,
-                                  color: Colors.white.withOpacity(0.7),
+                                  color: Colors.white.withValues(alpha: 0.7),
                                 ),
                                 textAlign: TextAlign.center,
                               ),
@@ -200,7 +200,7 @@ class LanguageScreen extends StatelessWidget {
                           'آپ جس بھی زبان میں لکھیں، میں ہمیشہ اردو میں جواب دوں گا کیونکہ یہ ماڈل خاص طور پر اردو کے لیے تیار کیا گیا ہے۔',
                           style: GoogleFonts.notoNaskhArabic(
                             fontSize: 16,
-                            color: Colors.white.withOpacity(0.9),
+                            color: Colors.white.withValues(alpha: 0.9),
                             height: 1.6,
                           ),
                           textAlign: TextAlign.center,
@@ -212,7 +212,7 @@ class LanguageScreen extends StatelessWidget {
                           'Whatever language you write in, I will always respond in Urdu as this model is specifically designed for Urdu.',
                           style: GoogleFonts.poppins(
                             fontSize: 14,
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white.withValues(alpha: 0.7),
                             height: 1.5,
                           ),
                           textAlign: TextAlign.center,
@@ -302,15 +302,15 @@ class LanguageScreen extends StatelessWidget {
 
   BoxDecoration _glassDecoration({double opacity = 0.15}) {
     return BoxDecoration(
-      color: Colors.white.withOpacity(opacity),
+      color: Colors.white.withValues(alpha: opacity),
       borderRadius: BorderRadius.circular(20),
       border: Border.all(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 0.2),
         width: 1,
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.1),
+          color: Colors.black.withValues(alpha: 0.1),
           blurRadius: 10,
           offset: const Offset(0, 4),
         ),
@@ -328,10 +328,10 @@ class LanguageScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(15),
         border: Border.all(
-          color: color.withOpacity(0.3),
+          color: color.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -340,7 +340,7 @@ class LanguageScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
+              color: color.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
@@ -369,7 +369,7 @@ class LanguageScreen extends StatelessWidget {
                       subtitle,
                       style: GoogleFonts.poppins(
                         fontSize: 12,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -379,7 +379,7 @@ class LanguageScreen extends StatelessWidget {
                   example,
                   style: GoogleFonts.notoNaskhArabic(
                     fontSize: 14,
-                    color: color.withOpacity(0.9),
+                    color: color.withValues(alpha: 0.9),
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -407,7 +407,7 @@ class LanguageScreen extends StatelessWidget {
               text,
               style: GoogleFonts.notoNaskhArabic(
                 fontSize: 14,
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 height: 1.4,
               ),
             ),

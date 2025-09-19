@@ -817,7 +817,6 @@ Professional لیکن گرم جوش اردو انداز استعمال کریں�
   // Get app statistics
   static Future<Map<String, dynamic>> getAppStats() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final profile = await getUserProfile();
       final summaries = await getConversationSummaries();
       final moodLogs = await getMoodLogs();

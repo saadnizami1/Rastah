@@ -34,7 +34,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
           // Subtle overlay for readability
           Positioned.fill(
             child: Container(
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black.withValues(alpha: 0.35),
             ),
           ),
 
@@ -74,7 +74,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                         Icon(
                           Icons.verified_user_outlined,
                           size: 50,
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -91,7 +91,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                           'Your Consent & Privacy',
                           style: GoogleFonts.poppins(
                             fontSize: 14,
-                            color: Colors.white.withOpacity(0.8),
+                            color: Colors.white.withValues(alpha: 0.8),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -202,8 +202,8 @@ class _ConsentScreenState extends State<ConsentScreen> {
                       } : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _canProceed
-                            ? Colors.greenAccent.withOpacity(0.8)
-                            : Colors.grey.shade500.withOpacity(0.5),
+                            ? Colors.greenAccent.withValues(alpha: 0.8)
+                            : Colors.grey.shade500.withValues(alpha: 0.5),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(25),
@@ -237,15 +237,15 @@ class _ConsentScreenState extends State<ConsentScreen> {
   // Glass effect decoration
   BoxDecoration _glassDecoration({double opacity = 0.15}) {
     return BoxDecoration(
-      color: Colors.white.withOpacity(opacity),
+      color: Colors.white.withValues(alpha: opacity),
       borderRadius: BorderRadius.circular(20),
       border: Border.all(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 0.2),
         width: 1,
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.1),
+          color: Colors.black.withValues(alpha: 0.1),
           blurRadius: 10,
           offset: const Offset(0, 4),
         ),
@@ -269,7 +269,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
             children: [
               Icon(
                 icon,
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 size: 24,
               ),
               const SizedBox(width: 12),
@@ -289,7 +289,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                       titleEng,
                       style: GoogleFonts.poppins(
                         fontSize: 12,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -302,7 +302,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
             content,
             style: GoogleFonts.notoNaskhArabic(
               fontSize: 14,
-              color: Colors.white.withOpacity(0.9),
+              color: Colors.white.withValues(alpha: 0.9),
               height: 1.6,
             ),
           ),
@@ -328,7 +328,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
             activeColor: Colors.greenAccent,
             checkColor: Colors.black,
             side: BorderSide(
-              color: Colors.white.withOpacity(0.5),
+              color: Colors.white.withValues(alpha: 0.5),
               width: 2,
             ),
           ),
@@ -349,7 +349,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                   subtitle,
                   style: GoogleFonts.poppins(
                     fontSize: 12,
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7),
                   ),
                 ),
               ],
